@@ -90,6 +90,18 @@ al inicio de la consola.
 
 ---
 
+# Desactivar entorno virtual
+
+Para salir del entorno virtual activo, ejecutar:
+
+```bash
+deactivate
+```
+
+Si se desactivó correctamente, desaparecerá el prefijo `(.venv)` en la consola.
+
+---
+
 # Instalar dependencias
 
 ```bash
