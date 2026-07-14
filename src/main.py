@@ -9,6 +9,6 @@ app = FastAPI(
 )
 
 app.include_router(
-    router,
+       router,
     prefix="/api/v1"
 )
