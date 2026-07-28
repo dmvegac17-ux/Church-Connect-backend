@@ -6,11 +6,13 @@ from fastapi import HTTPException
 from fastapi import Query
 from fastapi import status
 
+from src.api.dependencies.auth import get_current_user
 from src.api.dependencies.users import get_user_service
 from src.api.v1.users.schemas import UserCreate
 from src.api.v1.users.schemas import UserResponse
 from src.api.v1.users.schemas import UserUpdate
 from src.application.users.services import UserService
+from src.infrastructure.database.models.user_model import UserModel
 
 
 router = APIRouter(
@@ -28,6 +30,9 @@ async def get_users(
     offset: int = Query(0, ge=0),
     service: UserService = Depends(
         get_user_service
+    ),
+    current_user: UserModel = Depends(
+        get_current_user
     )
 ):
     return await service.get_all(
@@ -44,6 +49,9 @@ async def get_user(
     user_id: UUID,
     service: UserService = Depends(
         get_user_service
+    ),
+    current_user: UserModel = Depends(
+        get_current_user
     )
 ):
     try:
@@ -90,6 +98,9 @@ async def update_user(
     request: UserUpdate,
     service: UserService = Depends(
         get_user_service
+    ),
+    current_user: UserModel = Depends(
+        get_current_user
     )
 ):
     try:
@@ -113,6 +124,9 @@ async def delete_user(
     user_id: UUID,
     service: UserService = Depends(
         get_user_service
+    ),
+    current_user: UserModel = Depends(
+        get_current_user
     )
 ):
     try:

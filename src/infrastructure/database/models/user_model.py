@@ -35,6 +35,11 @@ class UserModel(Base):
         index=True
     )
 
+    contrasena: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False
+    )
+
     telefono: Mapped[str | None] = mapped_column(
         String(50),
         nullable=True

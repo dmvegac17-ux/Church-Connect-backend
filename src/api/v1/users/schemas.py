@@ -10,6 +10,7 @@ class UserCreate(BaseModel):
     nombre: str
     apellido: str | None = None
     correo: EmailStr
+    contrasena: str
     telefono: str | None = None
     rol: str
     activo: bool = True
@@ -19,6 +20,7 @@ class UserUpdate(BaseModel):
     nombre: str | None = None
     apellido: str | None = None
     correo: EmailStr | None = None
+    contrasena: str | None = None
     telefono: str | None = None
     rol: str | None = None
     activo: bool | None = None
