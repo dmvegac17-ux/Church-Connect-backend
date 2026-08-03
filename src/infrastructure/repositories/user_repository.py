@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +29,13 @@ class UserRepository:
         result = await self.db.execute(query)
 
         return result.scalars().all()
+
+    async def count(self) -> int:
+        query = select(func.count()).select_from(UserModel)
+
+        result = await self.db.execute(query)
+
+        return result.scalar_one()
 
     async def get_by_id(
         self,

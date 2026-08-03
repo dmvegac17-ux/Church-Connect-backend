@@ -27,6 +27,9 @@ class UserService:
             offset=offset
         )
 
+    async def count(self) -> int:
+        return await self.repository.count()
+
     async def get_by_id(
         self,
         user_id: UUID
