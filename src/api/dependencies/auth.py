@@ -3,7 +3,8 @@ from uuid import UUID
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPAuthorizationCredentials
+from fastapi.security import HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.auth.services import AuthService
@@ -12,7 +13,10 @@ from src.infrastructure.database.models.user_model import UserModel
 from src.infrastructure.database.session import get_db
 from src.infrastructure.repositories.user_repository import UserRepository
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+# HTTPBearer en vez de OAuth2PasswordBearer: el botón "Authorize" de Swagger
+# pide pegar el token directamente (sin disparar una petición AJAX propia),
+# evitando bugs de swagger-ui con el flujo OAuth2 password en algunos entornos.
+bearer_scheme = HTTPBearer()
 
 
 def get_auth_service(
@@ -24,9 +28,10 @@ def get_auth_service(
 
 
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db)
 ) -> UserModel:
+    token = credentials.credentials
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="No se pudo validar la credencial",

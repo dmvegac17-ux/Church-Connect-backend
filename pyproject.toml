@@ -1,0 +1,27 @@
+[project]
+name = "church-connect-backend"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.11, <3.14"
+dependencies = [
+    "alembic==1.16.4",
+    "asyncpg==0.30.0",
+    "bcrypt==4.0.1",
+    "email-validator==2.2.0",
+    "fastapi==0.116.1",
+    "passlib[bcrypt]==1.7.4",
+    "pydantic==2.11.7",
+    "pydantic-settings==2.10.1",
+    "pyjwt==2.10.1",
+    "python-dotenv==1.1.1",
+    "sqlalchemy==2.0.43",
+    "uvicorn[standard]==0.35.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.1",
+]
