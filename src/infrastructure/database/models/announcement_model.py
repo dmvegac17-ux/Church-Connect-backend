@@ -11,7 +11,7 @@ from src.infrastructure.database.base import Base
 
 
 class AnnouncementModel(Base):
-    __tablename__ = "anuncios"
+    __tablename__ = "announcements"
 
     id: Mapped[UUID] = mapped_column(
         primary_key=True

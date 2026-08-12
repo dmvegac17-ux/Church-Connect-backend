@@ -26,10 +26,10 @@ router = APIRouter(
 @router.get(
     "",
     response_model=ResponsePayload[list[AnnouncementResponse]],
-    summary="Listar anuncios",
+    summary="Listar announcements",
     description=(
-        "Devuelve un listado paginado de anuncios. "
-        "Cualquier usuario autenticado puede consultar los anuncios."
+        "Devuelve un listado paginado de announcements. "
+        "Cualquier usuario autenticado puede consultar los announcements."
     ),
     responses={
         401: {"description": "No autenticado"},
