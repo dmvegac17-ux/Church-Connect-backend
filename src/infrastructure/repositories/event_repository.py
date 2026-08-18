@@ -51,6 +51,20 @@ class EventRepository:
 
         return result.scalar_one_or_none()
 
+    async def get_by_id_for_update(
+        self,
+        event_id: UUID
+    ):
+        query = (
+            select(EventModel)
+            .where(EventModel.id == event_id)
+            .with_for_update()
+        )
+
+        result = await self.db.execute(query)
+
+        return result.scalar_one_or_none()
+
     async def create(
         self,
         event: EventModel
