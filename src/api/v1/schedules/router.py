@@ -11,6 +11,7 @@ from src.api.v1.schedules.schemas import ScheduleCreate
 from src.api.v1.schedules.schemas import ScheduleResponse
 from src.api.v1.schedules.schemas import ScheduleUpdate
 from src.application.schedules.services import EventNotFoundError
+from src.application.schedules.services import InvalidScheduleTimeError
 from src.application.schedules.services import ScheduleNotFoundError
 from src.application.schedules.services import ScheduleService
 from src.core.constants.enums import UserRole
@@ -123,6 +124,7 @@ async def get_schedule(
         "Solo el rol `admin` puede crear cronogramas."
     ),
     responses={
+        400: {"description": "hora_fin debe ser posterior a hora_inicio"},
         401: {"description": "No autenticado"},
         403: {"description": "No tiene permisos para realizar esta acción"},
         404: {"description": "Evento no encontrado"},
@@ -145,6 +147,12 @@ async def create_schedule(
     except EventNotFoundError as ex:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(ex)
+        )
+
+    except InvalidScheduleTimeError as ex:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(ex)
         )
 
@@ -191,6 +199,12 @@ async def update_schedule(
     except ScheduleNotFoundError as ex:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(ex)
+        )
+
+    except InvalidScheduleTimeError as ex:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(ex)
         )
 
