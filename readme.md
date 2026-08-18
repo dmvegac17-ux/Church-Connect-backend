@@ -319,3 +319,4 @@ src/
 tests/
 migrations/
 ```
+If you miss the Terminal-style experience of the previous extension, don’t worry! It hasn’t gone anywhere. Use the Claude Code: Use Terminal setting to switch back.
