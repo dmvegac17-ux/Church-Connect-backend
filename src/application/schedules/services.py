@@ -1,5 +1,3 @@
-<<<<<<< Updated upstream
-=======
 from uuid import UUID
 from uuid import uuid4
 
@@ -138,4 +136,3 @@ class ScheduleService:
         await self.repository.delete(
             schedule
         )
->>>>>>> Stashed changes

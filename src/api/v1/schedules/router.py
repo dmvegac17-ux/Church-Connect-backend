@@ -1,5 +1,3 @@
-<<<<<<< Updated upstream
-=======
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -254,4 +252,3 @@ async def delete_schedule(
         data=None,
         message="Cronograma eliminado exitosamente"
     )
->>>>>>> Stashed changes

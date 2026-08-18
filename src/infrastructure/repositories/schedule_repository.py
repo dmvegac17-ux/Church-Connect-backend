@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +29,23 @@ class ScheduleRepository:
         result = await self.db.execute(query)
 
         return result.scalars().all()
+
+    async def count(
+        self,
+        evento_id: UUID | None = None
+    ) -> int:
+        query = select(func.count()).select_from(
+            ScheduleModel
+        )
+
+        if evento_id is not None:
+            query = query.where(
+                ScheduleModel.evento_id == evento_id
+            )
+
+        result = await self.db.execute(query)
+
+        return result.scalar_one()
 
     async def get_by_id(
         self,
