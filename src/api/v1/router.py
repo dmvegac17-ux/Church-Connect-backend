@@ -10,6 +10,7 @@ from src.api.v1.events.router import router as events_router
 from src.api.v1.ministries.router import router as ministries_router
 from src.api.v1.registrations.router import router as registrations_router
 from src.api.v1.schedules.router import router as schedules_router
+from src.api.v1.archivos.router import router as archivos_router
 
 router = APIRouter()
 
@@ -30,5 +31,6 @@ router.include_router(
 router.include_router(events_router)
 router.include_router(ministries_router)
 router.include_router(schedules_router)
+router.include_router(archivos_router)
 router.include_router(registrations_router)
 router.include_router(attendances_router)
