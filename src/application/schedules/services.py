@@ -16,6 +16,10 @@ class EventNotFoundError(Exception):
     pass
 
 
+class InvalidScheduleTimeError(Exception):
+    pass
+
+
 class ScheduleService:
 
     def __init__(
@@ -78,6 +82,11 @@ class ScheduleService:
                 "Evento no encontrado"
             )
 
+        if request.hora_fin <= request.hora_inicio:
+            raise InvalidScheduleTimeError(
+                "hora_fin debe ser posterior a hora_inicio"
+            )
+
         schedule = ScheduleModel(
             id=uuid4(),
             evento_id=request.evento_id,
@@ -106,6 +115,11 @@ class ScheduleService:
 
         for field, value in update_data.items():
             setattr(schedule, field, value)
+
+        if schedule.hora_fin <= schedule.hora_inicio:
+            raise InvalidScheduleTimeError(
+                "hora_fin debe ser posterior a hora_inicio"
+            )
 
         return await self.repository.update(
             schedule
