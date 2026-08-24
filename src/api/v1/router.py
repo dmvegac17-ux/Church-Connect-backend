@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from src.api.v1.attendances.router import router as attendances_router
 from src.api.v1.auth.router import router as auth_router
 from src.api.v1.health.router import router as health_router
 from src.api.v1.users.router import router as users_router
@@ -30,3 +31,4 @@ router.include_router(events_router)
 router.include_router(ministries_router)
 router.include_router(schedules_router)
 router.include_router(registrations_router)
+router.include_router(attendances_router)
