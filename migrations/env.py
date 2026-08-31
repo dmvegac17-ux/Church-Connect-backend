@@ -16,6 +16,8 @@ from src.infrastructure.database.models.schedule_model import ScheduleModel
 from src.infrastructure.database.models.registration_model import RegistrationModel
 from src.infrastructure.database.models.announcement_model import AnnouncementModel
 from src.infrastructure.database.models.audit_model import AuditModel
+from src.infrastructure.database.models.attendance_model import AttendanceModel
+from src.infrastructure.database.models.confirmacion_email_model import ConfirmacionEmailModel
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
