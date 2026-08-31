@@ -15,6 +15,18 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
+    # CORS: orígenes permitidos para el frontend, separados por comas.
+    # Ej: "http://localhost:5173,https://church-connect.app"
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [
+            origin.strip()
+            for origin in self.CORS_ORIGINS.split(",")
+            if origin.strip()
+        ]
+
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore"
