@@ -10,6 +10,7 @@ from src.api.dependencies.event import get_event_service
 from src.api.v1.events.schemas import EventCreate
 from src.api.v1.events.schemas import EventResponse
 from src.api.v1.events.schemas import EventUpdate
+from src.application.events.services import EventHasSchedulesError
 from src.application.events.services import EventService
 from src.core.constants.enums import UserRole
 from src.core.schemas.response import ResponsePayload
@@ -203,6 +204,7 @@ async def update_event(
         401: {"description": "No autenticado"},
         403: {"description": "No tiene permisos para realizar esta acción"},
         404: {"description": "Evento no encontrado"},
+        409: {"description": "El evento tiene cronogramas asociados"},
     },
 )
 async def delete_event(
@@ -222,6 +224,12 @@ async def delete_event(
     except ValueError as ex:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(ex)
+        )
+
+    except EventHasSchedulesError as ex:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
             detail=str(ex)
         )
 

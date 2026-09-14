@@ -1,10 +1,16 @@
 from uuid import UUID
 from uuid import uuid4
 
+from sqlalchemy.exc import IntegrityError
+
 from src.api.v1.events.schemas import EventCreate
 from src.api.v1.events.schemas import EventUpdate
 from src.infrastructure.database.models.event_model import EventModel
 from src.infrastructure.repositories.event_repository import EventRepository
+
+
+class EventHasSchedulesError(Exception):
+    pass
 
 
 class EventService:
@@ -101,6 +107,13 @@ class EventService:
                 "Evento no encontrado"
             )
 
-        await self.repository.delete(
-            event
-        )
+        try:
+            await self.repository.delete(
+                event
+            )
+
+        except IntegrityError:
+            raise EventHasSchedulesError(
+                "No se puede eliminar el evento porque tiene "
+                "cronogramas asociados. Elimínalos primero."
+            )
