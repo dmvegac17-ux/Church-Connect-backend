@@ -7,28 +7,42 @@ from src.api.v1.notificaciones.schemas import NotificationCreate
 from src.api.v1.notificaciones.schemas import NotificationUpdate
 from src.infrastructure.database.models.notificaciones_model import NotificacionesModel
 from src.infrastructure.repositories.notificaciones_repository import NotificacionesRepository
+from src.infrastructure.repositories.user_repository import UserRepository
+
+
+class UserNotFoundError(Exception):
+    pass
 
 
 class NotificacionesService:
 
     def __init__(
         self,
-        repository: NotificacionesRepository
+        repository: NotificacionesRepository,
+        user_repository: UserRepository
     ):
         self.repository = repository
+        self.user_repository = user_repository
 
     async def get_all(
         self,
         limit: int,
-        offset: int
+        offset: int,
+        usuario_id: UUID | None = None
     ):
         return await self.repository.get_all(
             limit=limit,
-            offset=offset
+            offset=offset,
+            usuario_id=usuario_id
         )
 
-    async def count(self) -> int:
-        return await self.repository.count()
+    async def count(
+        self,
+        usuario_id: UUID | None = None
+    ) -> int:
+        return await self.repository.count(
+            usuario_id
+        )
 
     async def get_by_id(
         self,
@@ -47,12 +61,20 @@ class NotificacionesService:
 
     async def create(
         self,
-        request: NotificationCreate,
-        user_id: UUID
+        request: NotificationCreate
     ):
+        user = await self.user_repository.get_by_id(
+            request.usuario_id
+        )
+
+        if not user:
+            raise UserNotFoundError(
+                "Usuario no encontrado"
+            )
+
         notificacion = NotificacionesModel(
             id=uuid4(),
-            usuario_id=user_id,
+            usuario_id=request.usuario_id,
             titulo=request.titulo,
             mensaje=request.mensaje,
             leida=False,

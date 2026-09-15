@@ -8,14 +8,12 @@ from pydantic import ConfigDict
 class NotificationCreate(BaseModel):
     titulo: str
     mensaje: str
-    tipo: str
     usuario_id: UUID
 
 
 class NotificationUpdate(BaseModel):
     titulo: str | None = None
     mensaje: str | None = None
-    tipo: str | None = None
     leida: bool | None = None
 
 
@@ -27,10 +25,9 @@ class NotificationResponse(BaseModel):
     id: UUID
     titulo: str
     mensaje: str
-    tipo: str
     usuario_id: UUID
     leida: bool
-    fecha_creacion: datetime
+    fecha_envio: datetime
 
 
 class NotificationListResponse(BaseModel):

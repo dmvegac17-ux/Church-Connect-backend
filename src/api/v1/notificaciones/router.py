@@ -11,6 +11,7 @@ from src.api.v1.notificaciones.schemas import NotificationCreate
 from src.api.v1.notificaciones.schemas import NotificationResponse
 from src.api.v1.notificaciones.schemas import NotificationUpdate
 from src.application.notificaciones.services import NotificacionesService
+from src.application.notificaciones.services import UserNotFoundError
 from src.core.constants.enums import UserRole
 from src.core.schemas.response import ResponsePayload
 from src.core.security.permissions import require_roles
@@ -26,7 +27,11 @@ router = APIRouter(
     "",
     response_model=ResponsePayload[list[NotificationResponse]],
     summary="Listar notificaciones",
-    description="Devuelve un listado paginado de notificaciones.",
+    description=(
+        "Devuelve un listado paginado de notificaciones. El rol `admin` ve "
+        "las notificaciones de todos los usuarios; `participant` y `member` "
+        "solo ven las suyas."
+    ),
     responses={
         401: {"description": "No autenticado"},
     },
@@ -46,12 +51,21 @@ async def get_notificaciones(
         )
     )
 ):
-    notificaciones = await service.get_all(
-        limit=limit,
-        offset=offset
+    usuario_id = (
+        None
+        if current_user.rol == UserRole.ADMIN
+        else current_user.id
     )
 
-    total = await service.count()
+    notificaciones = await service.get_all(
+        limit=limit,
+        offset=offset,
+        usuario_id=usuario_id
+    )
+
+    total = await service.count(
+        usuario_id
+    )
 
     return ResponsePayload.ok(
         data=notificaciones,
@@ -62,8 +76,13 @@ async def get_notificaciones(
     "/{notificacion_id}",
     response_model=ResponsePayload[NotificationResponse],
     summary="Obtener notificación por ID",
+    description=(
+        "Devuelve el detalle de una notificación específica. El rol `admin` "
+        "puede consultar cualquiera; `participant` y `member` solo la suya."
+    ),
     responses={
         401: {"description": "No autenticado"},
+        403: {"description": "No tiene permisos para ver esta notificación"},
         404: {"description": "Notificación no encontrada"},
     },
 )
@@ -91,6 +110,15 @@ async def get_notificacion(
             detail=str(ex)
         )
 
+    if (
+        current_user.rol != UserRole.ADMIN
+        and notificacion.usuario_id != current_user.id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tiene permisos para ver esta notificación"
+        )
+
     return ResponsePayload.ok(
         data=notificacion,
         message="Notificación obtenida exitosamente"
@@ -101,6 +129,15 @@ async def get_notificacion(
     response_model=ResponsePayload[NotificationResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Crear notificación",
+    description=(
+        "Registra una nueva notificación para un usuario existente. "
+        "Solo el rol `admin` puede crear notificaciones."
+    ),
+    responses={
+        401: {"description": "No autenticado"},
+        403: {"description": "No tiene permisos para realizar esta acción"},
+        404: {"description": "Usuario no encontrado"},
+    },
 )
 async def create_notificacion(
     request: NotificationCreate,
@@ -113,13 +150,12 @@ async def create_notificacion(
 ):
     try:
         notificacion = await service.create(
-            request=request,
-            user_id=current_user.id
+            request=request
         )
 
-    except ValueError as ex:
+    except UserNotFoundError as ex:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail=str(ex)
         )
 
@@ -133,6 +169,16 @@ async def create_notificacion(
     "/{notificacion_id}",
     response_model=ResponsePayload[NotificationResponse],
     summary="Actualizar notificación",
+    description=(
+        "Actualiza los datos de una notificación existente (título, "
+        "mensaje o el estado `leida`). El `usuario_id` no es modificable. "
+        "Solo el rol `admin` puede actualizar notificaciones."
+    ),
+    responses={
+        401: {"description": "No autenticado"},
+        403: {"description": "No tiene permisos para realizar esta acción"},
+        404: {"description": "Notificación no encontrada"},
+    },
 )
 async def update_notificacion(
     notificacion_id: UUID,
@@ -165,6 +211,15 @@ async def update_notificacion(
     "/{notificacion_id}",
     response_model=ResponsePayload[None],
     summary="Eliminar notificación",
+    description=(
+        "Elimina una notificación existente. "
+        "Solo el rol `admin` puede eliminar notificaciones."
+    ),
+    responses={
+        401: {"description": "No autenticado"},
+        403: {"description": "No tiene permisos para realizar esta acción"},
+        404: {"description": "Notificación no encontrada"},
+    },
 )
 async def delete_notificacion(
     notificacion_id: UUID,

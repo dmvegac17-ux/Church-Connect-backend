@@ -17,22 +17,34 @@ class NotificacionesRepository:
     async def get_all(
         self,
         limit: int,
-        offset: int
+        offset: int,
+        usuario_id: UUID | None = None
     ):
-        query = (
-            select(NotificacionesModel)
-            .limit(limit)
-            .offset(offset)
-        )
+        query = select(NotificacionesModel)
+
+        if usuario_id is not None:
+            query = query.where(
+                NotificacionesModel.usuario_id == usuario_id
+            )
+
+        query = query.limit(limit).offset(offset)
 
         result = await self.db.execute(query)
 
         return result.scalars().all()
 
-    async def count(self) -> int:
+    async def count(
+        self,
+        usuario_id: UUID | None = None
+    ) -> int:
         query = select(func.count()).select_from(
             NotificacionesModel
         )
+
+        if usuario_id is not None:
+            query = query.where(
+                NotificacionesModel.usuario_id == usuario_id
+            )
 
         result = await self.db.execute(query)
 
