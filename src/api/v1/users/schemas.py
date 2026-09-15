@@ -4,24 +4,40 @@ from uuid import UUID
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import EmailStr
+from pydantic import field_validator
+
+from src.core.constants.enums import UserRole
+
+
+def _normalize_role(value: object) -> object:
+    if isinstance(value, str):
+        return value.upper()
+
+    return value
 
 
 class UserCreate(BaseModel):
     nombre: str
-    apellido: str | None = None
+    apellido: str
     correo: EmailStr
+    contrasena: str
     telefono: str | None = None
-    rol: str
+    rol: UserRole
     activo: bool = True
+
+    _normalize_rol = field_validator("rol", mode="before")(_normalize_role)
 
 
 class UserUpdate(BaseModel):
     nombre: str | None = None
     apellido: str | None = None
     correo: EmailStr | None = None
+    contrasena: str | None = None
     telefono: str | None = None
-    rol: str | None = None
+    rol: UserRole | None = None
     activo: bool | None = None
+
+    _normalize_rol = field_validator("rol", mode="before")(_normalize_role)
 
 
 class UserResponse(BaseModel):
@@ -34,7 +50,7 @@ class UserResponse(BaseModel):
     apellido: str | None
     correo: EmailStr
     telefono: str | None
-    rol: str
+    rol: UserRole
     activo: bool | None
     fecha_creacion: datetime | None
 

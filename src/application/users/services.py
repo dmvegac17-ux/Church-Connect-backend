@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from src.api.v1.users.schemas import UserCreate
 from src.api.v1.users.schemas import UserUpdate
+from src.core.security.hashing import hash_password
 from src.infrastructure.database.models.user_model import UserModel
 from src.infrastructure.repositories.user_repository import UserRepository
 
@@ -25,6 +26,9 @@ class UserService:
             limit=limit,
             offset=offset
         )
+
+    async def count(self) -> int:
+        return await self.repository.count()
 
     async def get_by_id(
         self,
@@ -55,6 +59,7 @@ class UserService:
             nombre=request.nombre,
             apellido=request.apellido,
             correo=request.correo,
+            contrasena=hash_password(request.contrasena),
             telefono=request.telefono,
             rol=request.rol,
             activo=request.activo,
@@ -91,6 +96,11 @@ class UserService:
         update_data = request.model_dump(
             exclude_unset=True
         )
+
+        if "contrasena" in update_data:
+            update_data["contrasena"] = hash_password(
+                update_data["contrasena"]
+            )
 
         for field, value in update_data.items():
             setattr(user, field, value)
