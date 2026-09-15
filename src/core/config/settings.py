@@ -19,6 +19,14 @@ class Settings(BaseSettings):
     # Ej: "http://localhost:5173,https://church-connect.app"
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
 
+    # SMTP: envío de correos (notificaciones, etc.). Si `SMTP_HOST` o
+    # `SMTP_FROM` quedan vacíos, el envío se omite (ver `smtp_configured`).
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [
@@ -26,6 +34,10 @@ class Settings(BaseSettings):
             for origin in self.CORS_ORIGINS.split(",")
             if origin.strip()
         ]
+
+    @property
+    def smtp_configured(self) -> bool:
+        return bool(self.SMTP_HOST and self.SMTP_FROM)
 
     model_config = SettingsConfigDict(
         env_file=".env",

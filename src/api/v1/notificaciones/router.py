@@ -28,9 +28,9 @@ router = APIRouter(
     response_model=ResponsePayload[list[NotificationResponse]],
     summary="Listar notificaciones",
     description=(
-        "Devuelve un listado paginado de notificaciones. El rol `admin` ve "
-        "las notificaciones de todos los usuarios; `participant` y `member` "
-        "solo ven las suyas."
+        "Devuelve un listado paginado de las notificaciones del usuario "
+        "autenticado. Nadie puede ver notificaciones de otro usuario, "
+        "sin importar su rol (ni siquiera `admin`)."
     ),
     responses={
         401: {"description": "No autenticado"},
@@ -51,11 +51,7 @@ async def get_notificaciones(
         )
     )
 ):
-    usuario_id = (
-        None
-        if current_user.rol == UserRole.ADMIN
-        else current_user.id
-    )
+    usuario_id = current_user.id
 
     notificaciones = await service.get_all(
         limit=limit,
@@ -77,8 +73,9 @@ async def get_notificaciones(
     response_model=ResponsePayload[NotificationResponse],
     summary="Obtener notificación por ID",
     description=(
-        "Devuelve el detalle de una notificación específica. El rol `admin` "
-        "puede consultar cualquiera; `participant` y `member` solo la suya."
+        "Devuelve el detalle de una notificación específica. Solo puede "
+        "consultarla el usuario al que va dirigida; nadie más, sin importar "
+        "su rol (ni siquiera `admin`)."
     ),
     responses={
         401: {"description": "No autenticado"},
@@ -110,10 +107,7 @@ async def get_notificacion(
             detail=str(ex)
         )
 
-    if (
-        current_user.rol != UserRole.ADMIN
-        and notificacion.usuario_id != current_user.id
-    ):
+    if notificacion.usuario_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tiene permisos para ver esta notificación"
@@ -130,8 +124,10 @@ async def get_notificacion(
     status_code=status.HTTP_201_CREATED,
     summary="Crear notificación",
     description=(
-        "Registra una nueva notificación para un usuario existente. "
-        "Solo el rol `admin` puede crear notificaciones."
+        "Registra una nueva notificación para un usuario existente y le "
+        "envía un correo con el título y el mensaje (best-effort: si el "
+        "envío falla o no hay SMTP configurado, la notificación igual se "
+        "crea). Solo el rol `admin` puede crear notificaciones."
     ),
     responses={
         401: {"description": "No autenticado"},

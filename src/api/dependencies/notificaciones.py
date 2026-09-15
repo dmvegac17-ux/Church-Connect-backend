@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.notificaciones.services import NotificacionesService
 from src.infrastructure.database.session import get_db
+from src.infrastructure.email.email_service import email_service
 from src.infrastructure.repositories.notificaciones_repository import NotificacionesRepository
 from src.infrastructure.repositories.user_repository import UserRepository
 
@@ -16,5 +17,6 @@ def get_notificacion_service(
 
     return NotificacionesService(
         repository,
-        user_repository
+        user_repository,
+        email_service
     )

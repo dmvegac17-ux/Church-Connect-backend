@@ -6,6 +6,7 @@ from uuid import uuid4
 from src.api.v1.notificaciones.schemas import NotificationCreate
 from src.api.v1.notificaciones.schemas import NotificationUpdate
 from src.infrastructure.database.models.notificaciones_model import NotificacionesModel
+from src.infrastructure.email.email_service import EmailService
 from src.infrastructure.repositories.notificaciones_repository import NotificacionesRepository
 from src.infrastructure.repositories.user_repository import UserRepository
 
@@ -19,10 +20,12 @@ class NotificacionesService:
     def __init__(
         self,
         repository: NotificacionesRepository,
-        user_repository: UserRepository
+        user_repository: UserRepository,
+        email_service: EmailService
     ):
         self.repository = repository
         self.user_repository = user_repository
+        self.email_service = email_service
 
     async def get_all(
         self,
@@ -81,9 +84,17 @@ class NotificacionesService:
             fecha_envio=datetime.now(UTC)
         )
 
-        return await self.repository.create(
+        created = await self.repository.create(
             notificacion
         )
+
+        await self.email_service.send(
+            to=user.correo,
+            subject=request.titulo,
+            body=request.mensaje
+        )
+
+        return created
 
     async def update(
         self,

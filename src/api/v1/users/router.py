@@ -10,6 +10,7 @@ from src.api.dependencies.users import get_user_service
 from src.api.v1.users.schemas import UserCreate
 from src.api.v1.users.schemas import UserResponse
 from src.api.v1.users.schemas import UserUpdate
+from src.application.users.services import UserHasRelatedRecordsError
 from src.application.users.services import UserService
 from src.core.constants.enums import UserRole
 from src.core.schemas.response import ResponsePayload
@@ -204,6 +205,7 @@ async def update_user(
         401: {"description": "No autenticado"},
         403: {"description": "No tiene permisos para realizar esta acción"},
         404: {"description": "Usuario no encontrado"},
+        409: {"description": "El usuario tiene registros asociados"},
     },
 )
 async def delete_user(
@@ -223,6 +225,12 @@ async def delete_user(
     except ValueError as ex:
         raise HTTPException(
             status_code=404,
+            detail=str(ex)
+        )
+
+    except UserHasRelatedRecordsError as ex:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
             detail=str(ex)
         )
 
