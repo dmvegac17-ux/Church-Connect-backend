@@ -9,7 +9,7 @@ from src.core.logging.logger import logger
 class EmailService:
     """
     Envía correos por SMTP. Si `settings.smtp_configured` es `False`
-    (`SMTP_HOST`/`SMTP_FROM` sin definir, como en desarrollo local sin
+    (`MAIL_SMTP_HOST`/`MAIL_SMTP_FROM` sin definir, como en desarrollo local sin
     credenciales), el envío se omite silenciosamente. Cualquier error de
     conexión/autenticación se registra en el log pero no se propaga: enviar
     el correo es un efecto secundario best-effort, no debe hacer fallar la
@@ -54,13 +54,13 @@ class EmailService:
     ) -> None:
         message = EmailMessage()
         message["Subject"] = subject
-        message["From"] = settings.SMTP_FROM
+        message["From"] = settings.MAIL_SMTP_FROM
         message["To"] = to
         message.set_content(body)
 
         with smtplib.SMTP(
-            settings.SMTP_HOST,
-            settings.SMTP_PORT,
+            settings.MAIL_SMTP_HOST,
+            settings.MAIL_SMTP_PORT,
             timeout=10
         ) as smtp:
             smtp.ehlo()
@@ -69,10 +69,10 @@ class EmailService:
                 smtp.starttls()
                 smtp.ehlo()
 
-            if settings.SMTP_USERNAME:
+            if settings.MAIL_SMTP_USERNAME:
                 smtp.login(
-                    settings.SMTP_USERNAME,
-                    settings.SMTP_PASSWORD
+                    settings.MAIL_SMTP_USERNAME,
+                    settings.MAIL_SMTP_PASSWORD
                 )
 
             smtp.send_message(message)

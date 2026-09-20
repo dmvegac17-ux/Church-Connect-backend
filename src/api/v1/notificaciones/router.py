@@ -4,9 +4,11 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import Response
 from fastapi import status
 
 from src.api.dependencies.notificaciones import get_notificacion_service
+from src.api.v1.notificaciones.schemas import NotificationBulkCreate
 from src.api.v1.notificaciones.schemas import NotificationCreate
 from src.api.v1.notificaciones.schemas import NotificationResponse
 from src.api.v1.notificaciones.schemas import NotificationUpdate
@@ -14,6 +16,7 @@ from src.application.notificaciones.services import NotificacionesService
 from src.application.notificaciones.services import UserNotFoundError
 from src.core.constants.enums import UserRole
 from src.core.schemas.response import ResponsePayload
+from src.core.schemas.response import status_name
 from src.core.security.permissions import require_roles
 from src.infrastructure.database.models.user_model import UserModel
 
@@ -159,6 +162,91 @@ async def create_notificacion(
         data=notificacion,
         status_code=status.HTTP_201_CREATED,
         message="Notificación creada exitosamente"
+    )
+
+@router.post(
+    "/masivo",
+    response_model=ResponsePayload[list[NotificationResponse]],
+    status_code=status.HTTP_201_CREATED,
+    summary="Enviar notificaciones masivas",
+    description=(
+        "Registra y envía la misma notificación (título y mensaje) a una "
+        "lista de usuarios. Cada usuario se procesa de forma independiente: "
+        "si uno falla (usuario inexistente, error de base de datos), no "
+        "afecta a los demás. Solo el rol `admin` puede usar este endpoint."
+    ),
+    responses={
+        207: {"description": "Envío parcial: algunas notificaciones fallaron"},
+        400: {"description": "usuarios_ids es requerido y no puede estar vacío"},
+        401: {"description": "No autenticado"},
+        403: {"description": "No tiene permisos para realizar esta acción"},
+        500: {"description": "Ninguna notificación pudo procesarse"},
+    },
+)
+async def create_notificaciones_masivas(
+    request: NotificationBulkCreate,
+    response: Response,
+    service: NotificacionesService = Depends(
+        get_notificacion_service
+    ),
+    current_user: UserModel = Depends(
+        require_roles(UserRole.ADMIN)
+    )
+):
+    if not request.usuarios_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Debe indicar al menos un usuario en usuarios_ids"
+        )
+
+    creadas, errores = await service.create_bulk(
+        request
+    )
+
+    total = len(request.usuarios_ids)
+    exitosas = len(creadas)
+    fallidas = len(errores)
+
+    meta = {
+        "total": total,
+        "exitosas": exitosas,
+        "fallidas": fallidas
+    }
+
+    if exitosas == 0:
+        response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+
+        return ResponsePayload(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status=status_name(status.HTTP_500_INTERNAL_SERVER_ERROR),
+            data=None,
+            success=False,
+            message="No se pudo enviar ninguna notificación",
+            errors=errores,
+            meta=meta
+        )
+
+    if fallidas > 0:
+        response.status_code = status.HTTP_207_MULTI_STATUS
+
+        return ResponsePayload(
+            status_code=status.HTTP_207_MULTI_STATUS,
+            status=status_name(status.HTTP_207_MULTI_STATUS),
+            data=creadas,
+            success=True,
+            message=(
+                f"Se enviaron {exitosas} notificaciones exitosamente "
+                f"y {fallidas} fallaron"
+            ),
+            errors=errores,
+            meta=meta
+        )
+
+    return ResponsePayload.ok(
+        data=creadas,
+        status_code=status.HTTP_201_CREATED,
+        message=f"Se enviaron {exitosas} notificaciones exitosamente",
+        meta=meta
     )
 
 @router.put(

@@ -3,12 +3,19 @@ from uuid import UUID
 
 from pydantic import BaseModel
 from pydantic import ConfigDict
+from pydantic import Field
 
 
 class NotificationCreate(BaseModel):
     titulo: str
     mensaje: str
     usuario_id: UUID
+
+
+class NotificationBulkCreate(BaseModel):
+    titulo: str
+    mensaje: str
+    usuarios_ids: list[UUID] = Field(default_factory=list)
 
 
 class NotificationUpdate(BaseModel):

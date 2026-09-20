@@ -74,6 +74,9 @@ class NotificacionesRepository:
 
         return notificacion
 
+    async def rollback(self) -> None:
+        await self.db.rollback()
+
     async def delete(
         self,
         notificacion: NotificacionesModel
