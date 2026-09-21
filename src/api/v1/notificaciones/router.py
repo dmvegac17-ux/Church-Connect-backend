@@ -149,7 +149,8 @@ async def create_notificacion(
 ):
     try:
         notificacion = await service.create(
-            request=request
+            request=request,
+            remitente=current_user
         )
 
     except UserNotFoundError as ex:
@@ -200,7 +201,8 @@ async def create_notificaciones_masivas(
         )
 
     creadas, errores = await service.create_bulk(
-        request
+        request,
+        remitente=current_user
     )
 
     total = len(request.usuarios_ids)

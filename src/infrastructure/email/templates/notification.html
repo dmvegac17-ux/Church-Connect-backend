@@ -1,0 +1,67 @@
+<!--
+  Paleta de colores "Church Connect" (tomada del sitio web):
+  --cc-green-dark    #4A6B50  header, pill activo, texto de marca
+  --cc-green-darker  #3A5640  reservado para hover/estados
+  --cc-tan           #D9C8A0  pills secundarios (fondo)
+  --cc-tan-text      #5B4A32  texto sobre pills tan
+  --cc-cream         #FBF6E6  fondo de página / pie de tarjeta
+  --cc-mint          #EFF6EA  fondo de página (variante clara)
+  --cc-text-dark     #1F2937  títulos
+  --cc-text-muted    #6B7280  texto secundario
+  --cc-badge-blue-bg #DCE9F9  --cc-badge-blue-text #2B5F92
+  --cc-badge-green-bg #DFEEE0 --cc-badge-green-text #2E6B40
+  Los clientes de correo no soportan variables CSS, por lo que los valores
+  van hardcodeados abajo; esta lista es la referencia para mantenerlos
+  consistentes si se edita la plantilla.
+-->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>$titulo</title>
+</head>
+<body style="margin:0; padding:0; background-color:#EFF6EA; font-family:Arial, Helvetica, sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#EFF6EA; padding:24px 0;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px; background-color:#ffffff; border-radius:8px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+          <tr>
+            <td style="background-color:#4A6B50; padding:28px 32px;">
+              <table role="presentation" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="width:44px; height:44px; background-color:#ffffff; border-radius:10px; text-align:center; vertical-align:middle;">
+                    <span style="font-size:22px; line-height:44px;">&#9962;</span>
+                  </td>
+                  <td style="padding-left:14px; vertical-align:middle;">
+                    <div style="font-size:20px; font-weight:bold; color:#ffffff;">Church Connect</div>
+                    <div style="font-size:12px; color:#E4EEE2; margin-top:2px;">Conectados con tu fe, conectados contigo</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:32px;">
+              <span style="display:inline-block; background-color:#DFEEE0; color:#2E6B40; font-size:11px; font-weight:bold; letter-spacing:0.5px; padding:4px 10px; border-radius:999px; margin-bottom:14px;">NOTIFICACIÓN</span>
+              <p style="margin:0 0 8px; font-size:14px; color:#6B7280;">Hola, $usuario_nombre</p>
+              <h1 style="margin:0 0 16px; font-size:20px; color:#1F2937;">$titulo</h1>
+              <div style="margin:0; font-size:15px; line-height:1.6; color:#374151;">$mensaje</div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:20px 32px; background-color:#FBF6E6; border-top:1px solid #E5E7EB;">
+              <p style="margin:0; font-size:12px; color:#6B7280;">
+                Este es un mensaje automático de Church Connect. Por favor no respondas a este correo.
+              </p>
+              <p style="margin:8px 0 0; font-size:12px; color:#6B7280;">
+                &copy; $anio Church Connect
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
