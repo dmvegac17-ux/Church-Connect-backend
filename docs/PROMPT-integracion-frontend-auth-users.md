@@ -91,9 +91,10 @@ tipado con `message` + `errors` para mostrarlo en la UI.
   { "nombre": "Ana", "apellido": "Pérez", "correo": "ana@mail.com", "contrasena": "secreta123", "telefono": "3001234567" }
   ```
   `telefono` es opcional. `nombre`, `apellido`, `correo`, `contrasena` obligatorios.
+  `contrasena` debe tener entre 8 y 20 caracteres.
 - **201:** `data` = `UserResponse` del usuario creado (rol `MEMBER`).
 - **400:** correo ya registrado → `message: "El correo ya se encuentra registrado"`.
-- **422:** campos faltantes o inválidos.
+- **422:** campos faltantes o inválidos (incluye `contrasena` fuera del rango 8-20 caracteres).
 
 ### 6.2 Inicio de sesión — `POST /api/v1/auth/login`
 
@@ -133,8 +134,10 @@ tipado con `message` + `errors` para mostrarlo en la UI.
   - `ADMIN`: puede actualizar cualquier usuario, incluidos `rol` y `activo`.
   - `PARTICIPANT`/`MEMBER`: solo su propio perfil y **no** pueden enviar `rol` ni `activo`
     (→ `403 "No tiene permisos para modificar el rol o el estado del usuario"`).
-  - `contrasena` solo se puede cambiar sobre **el propio** `id`, **incluso siendo `ADMIN`**
-    (→ `403 "No tiene permisos para modificar la contraseña de otro usuario"`).
+  - `contrasena`: cada usuario puede cambiar la suya propia; además `ADMIN` puede cambiar la
+    de **cualquier** usuario. `PARTICIPANT`/`MEMBER` que intenten cambiar la de otro `id`
+    reciben `403 "No tiene permisos para modificar la contraseña de otro usuario"`.
+    Cuando se envía, debe tener entre 8 y 20 caracteres (si no, `422`).
 - **200:** `data` = `UserResponse` actualizado · **400** correo en uso · **403** según reglas.
 
 ### 6.7 Eliminar usuario — `DELETE /api/v1/users/{id}`

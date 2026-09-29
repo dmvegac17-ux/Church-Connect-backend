@@ -144,10 +144,10 @@ async def create_user(
     summary="Actualizar usuario",
     description=(
         "Actualiza los datos de un usuario existente. El rol `admin` puede "
-        "actualizar cualquier usuario, incluyendo `rol` y `activo`; "
-        "`participant` y `member` solo pueden actualizar su propio perfil "
-        "y no pueden modificar `rol` ni `activo`. La `contrasena` solo puede "
-        "modificarse a sí mismo, incluso si quien la solicita es `admin`."
+        "actualizar cualquier usuario, incluyendo `rol`, `activo` y "
+        "`contrasena`; `participant` y `member` solo pueden actualizar su "
+        "propio perfil, no pueden modificar `rol` ni `activo`, y solo "
+        "pueden cambiar su propia `contrasena`."
     ),
     responses={
         400: {"description": "Datos inválidos"},
@@ -172,7 +172,7 @@ async def update_user(
                 detail="No tiene permisos para modificar el rol o el estado del usuario"
             )
 
-    if request.contrasena is not None and current_user.id != user_id:
+    if request.contrasena is not None and current_user.id != user_id and current_user.rol != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tiene permisos para modificar la contraseña de otro usuario"
