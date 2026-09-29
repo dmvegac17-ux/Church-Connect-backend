@@ -258,7 +258,9 @@ async def create_notificaciones_masivas(
     description=(
         "Actualiza los datos de una notificación existente (título, "
         "mensaje o el estado `leida`). El `usuario_id` no es modificable. "
-        "Solo el rol `admin` puede actualizar notificaciones."
+        "El rol `admin` puede actualizar cualquier notificación por "
+        "completo; el usuario dueño de la notificación solo puede marcarla "
+        "como `leida`, sin modificar `titulo` ni `mensaje`."
     ),
     responses={
         401: {"description": "No autenticado"},
@@ -273,9 +275,37 @@ async def update_notificacion(
         get_notificacion_service
     ),
     current_user: UserModel = Depends(
-        require_roles(UserRole.ADMIN)
+        require_roles(
+            UserRole.ADMIN,
+            UserRole.PARTICIPANT,
+            UserRole.MEMBER
+        )
     )
 ):
+    try:
+        notificacion_actual = await service.get_by_id(
+            notificacion_id
+        )
+
+    except ValueError as ex:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(ex)
+        )
+
+    if current_user.rol != UserRole.ADMIN:
+        if notificacion_actual.usuario_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tiene permisos para modificar esta notificación"
+            )
+
+        if request.titulo is not None or request.mensaje is not None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Solo puede marcar la notificación como leída"
+            )
+
     try:
         notificacion = await service.update(
             notificacion_id=notificacion_id,
