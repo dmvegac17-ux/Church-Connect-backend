@@ -1,11 +1,9 @@
-from datetime import UTC
-from datetime import datetime
-from uuid import UUID
-from uuid import uuid4
+from datetime import UTC, datetime
+from uuid import UUID, uuid4
 
-from src.api.v1.attendances.schemas import AttendanceCreate
-from src.api.v1.attendances.schemas import AttendanceUpdate
+from src.api.v1.attendances.schemas import AttendanceCreate, AttendanceUpdate
 from src.infrastructure.database.models.attendance_model import AttendanceModel
+from src.infrastructure.database.models.event_model import EventModel
 from src.infrastructure.database.models.user_model import UserModel
 from src.infrastructure.repositories.attendance_repository import AttendanceRepository
 from src.infrastructure.repositories.event_repository import EventRepository
@@ -25,6 +23,10 @@ class EventNotFoundError(Exception):
 
 
 class DuplicateAttendanceError(Exception):
+    pass
+
+
+class AttendanceOutsideEventWindowError(Exception):
     pass
 
 
@@ -88,9 +90,10 @@ class AttendanceService:
             request.usuario_id
         )
 
-        await self._ensure_event_exists(
+        event = await self._get_event(
             request.evento_id
         )
+        self._ensure_event_is_in_progress(event)
 
         await self._ensure_not_duplicate(
             usuario_id=request.usuario_id,
@@ -136,15 +139,18 @@ class AttendanceService:
             "evento_id", attendance.evento_id
         )
 
+        if next_evento_id is None:
+            raise EventNotFoundError(
+                "Evento no encontrado"
+            )
+
         if "usuario_id" in update_data:
             await self._ensure_user_exists(
                 next_usuario_id
             )
 
-        if "evento_id" in update_data:
-            await self._ensure_event_exists(
-                next_evento_id
-            )
+        event = await self._get_event(next_evento_id)
+        self._ensure_event_is_in_progress(event)
 
         if (
             next_usuario_id != attendance.usuario_id
@@ -197,17 +203,29 @@ class AttendanceService:
                 "Usuario no encontrado"
             )
 
-    async def _ensure_event_exists(
-        self,
-        evento_id: UUID
-    ) -> None:
-        event = await self.event_repository.get_by_id(
-            evento_id
-        )
+    async def _get_event(self, evento_id: UUID) -> EventModel:
+        event = await self.event_repository.get_by_id(evento_id)
 
         if not event:
             raise EventNotFoundError(
                 "Evento no encontrado"
+            )
+        return event
+
+    @staticmethod
+    def _ensure_event_is_in_progress(event: EventModel) -> None:
+        now = datetime.now(UTC)
+        start = event.fecha_inicio
+        end = event.fecha_fin
+
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=UTC)
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=UTC)
+
+        if not start <= now <= end:
+            raise AttendanceOutsideEventWindowError(
+                "La asistencia solo se puede confirmar durante el horario del evento"
             )
 
     async def _ensure_not_duplicate(

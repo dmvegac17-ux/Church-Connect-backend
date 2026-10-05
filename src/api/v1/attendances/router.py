@@ -1,25 +1,25 @@
 from uuid import UUID
 
-from fastapi import APIRouter
-from fastapi import Depends
-from fastapi import HTTPException
-from fastapi import Query
-from fastapi import status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from src.api.dependencies.attendances import get_attendance_service
-from src.api.v1.attendances.schemas import AttendanceCreate
-from src.api.v1.attendances.schemas import AttendanceResponse
-from src.api.v1.attendances.schemas import AttendanceUpdate
-from src.application.attendances.services import AttendanceNotFoundError
-from src.application.attendances.services import AttendanceService
-from src.application.attendances.services import AttendanceUserNotFoundError
-from src.application.attendances.services import DuplicateAttendanceError
-from src.application.attendances.services import EventNotFoundError
+from src.api.v1.attendances.schemas import (
+    AttendanceCreate,
+    AttendanceResponse,
+    AttendanceUpdate,
+)
+from src.application.attendances.services import (
+    AttendanceNotFoundError,
+    AttendanceOutsideEventWindowError,
+    AttendanceService,
+    AttendanceUserNotFoundError,
+    DuplicateAttendanceError,
+    EventNotFoundError,
+)
 from src.core.constants.enums import UserRole
 from src.core.schemas.response import ResponsePayload
 from src.core.security.permissions import require_roles
 from src.infrastructure.database.models.user_model import UserModel
-
 
 router = APIRouter(
     prefix="/attendances",
@@ -126,7 +126,12 @@ async def get_attendance(
         401: {"description": "No autenticado"},
         403: {"description": "No tiene permisos para realizar esta acción"},
         404: {"description": "Usuario o evento no encontrado"},
-        409: {"description": "Ya existe una asistencia para ese usuario y evento"},
+        409: {
+            "description": (
+                "Ya existe una asistencia para ese usuario y evento, "
+                "o el evento no está dentro de su horario de realización"
+            )
+        },
     },
 )
 async def create_attendance(
@@ -156,6 +161,12 @@ async def create_attendance(
             detail=str(ex)
         )
 
+    except AttendanceOutsideEventWindowError as ex:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(ex)
+        )
+
     return ResponsePayload.ok(
         data=attendance,
         status_code=status.HTTP_201_CREATED,
@@ -175,7 +186,12 @@ async def create_attendance(
         401: {"description": "No autenticado"},
         403: {"description": "No tiene permisos para realizar esta acción"},
         404: {"description": "Asistencia, usuario o evento no encontrado"},
-        409: {"description": "Ya existe una asistencia para ese usuario y evento"},
+        409: {
+            "description": (
+                "Ya existe una asistencia para ese usuario y evento, "
+                "o el evento no está dentro de su horario de realización"
+            )
+        },
     },
 )
 async def update_attendance(
@@ -207,6 +223,12 @@ async def update_attendance(
         )
 
     except DuplicateAttendanceError as ex:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(ex)
+        )
+
+    except AttendanceOutsideEventWindowError as ex:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(ex)
