@@ -3,6 +3,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean
 from sqlalchemy import DateTime
+from sqlalchemy import ForeignKey
 from sqlalchemy import String
 from sqlalchemy import Text
 from sqlalchemy.orm import Mapped
@@ -20,6 +21,7 @@ class NotificacionesModel(Base):
     )
 
     usuario_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("usuarios.id", ondelete="CASCADE"),
         nullable=True
     )
 

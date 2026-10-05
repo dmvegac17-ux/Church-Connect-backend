@@ -20,6 +20,14 @@ class InvalidScheduleTimeError(Exception):
     pass
 
 
+class ScheduleOutOfEventRangeError(Exception):
+    pass
+
+
+class ScheduleOverlapError(Exception):
+    pass
+
+
 class ScheduleService:
 
     def __init__(
@@ -87,13 +95,26 @@ class ScheduleService:
                 "hora_fin debe ser posterior a hora_inicio"
             )
 
+        existing = await self.repository.get_by_evento_id(
+            event.id
+        )
+
+        self._validate_range_and_overlap(
+            event=event,
+            hora_inicio=request.hora_inicio,
+            hora_fin=request.hora_fin,
+            existing_schedules=existing,
+            schedule_id=None
+        )
+
         schedule = ScheduleModel(
             id=uuid4(),
             evento_id=request.evento_id,
             actividad=request.actividad,
             hora_inicio=request.hora_inicio,
             hora_fin=request.hora_fin,
-            responsable=request.responsable
+            responsable=request.responsable,
+            descripcion=request.descripcion
         )
 
         return await self.repository.create(
@@ -121,9 +142,54 @@ class ScheduleService:
                 "hora_fin debe ser posterior a hora_inicio"
             )
 
+        event = await self.event_repository.get_by_id(
+            schedule.evento_id
+        )
+
+        if not event:
+            raise EventNotFoundError(
+                "Evento no encontrado"
+            )
+
+        existing = await self.repository.get_by_evento_id(
+            event.id
+        )
+
+        self._validate_range_and_overlap(
+            event=event,
+            hora_inicio=schedule.hora_inicio,
+            hora_fin=schedule.hora_fin,
+            existing_schedules=existing,
+            schedule_id=schedule.id
+        )
+
         return await self.repository.update(
             schedule
         )
+
+    def _validate_range_and_overlap(
+        self,
+        event,
+        hora_inicio,
+        hora_fin,
+        existing_schedules,
+        schedule_id: UUID | None
+    ) -> None:
+        if hora_inicio < event.fecha_inicio or hora_fin > event.fecha_fin:
+            raise ScheduleOutOfEventRangeError(
+                "El cronograma debe estar dentro del rango de fechas "
+                "del evento"
+            )
+
+        for other in existing_schedules:
+            if schedule_id is not None and other.id == schedule_id:
+                continue
+
+            if other.hora_inicio < hora_fin and other.hora_fin > hora_inicio:
+                raise ScheduleOverlapError(
+                    "El horario se solapa con otra actividad del "
+                    "cronograma de este evento"
+                )
 
     async def delete(
         self,
