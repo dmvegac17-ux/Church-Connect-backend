@@ -10,8 +10,9 @@ from src.api.dependencies.event import get_event_service
 from src.api.v1.events.schemas import EventCreate
 from src.api.v1.events.schemas import EventResponse
 from src.api.v1.events.schemas import EventUpdate
-from src.application.events.services import EventHasSchedulesError
 from src.application.events.services import EventService
+from src.application.events.services import InvalidEventDateRangeError
+from src.application.events.services import InvalidEventLocationError
 from src.core.constants.enums import UserRole
 from src.core.schemas.response import ResponsePayload
 from src.core.security.permissions import require_roles
@@ -117,6 +118,12 @@ async def get_event(
         "Solo el rol `admin` puede crear eventos."
     ),
     responses={
+        400: {
+            "description": (
+                "La fecha/hora de fin debe ser posterior a la de inicio, "
+                "o latitud/longitud se enviaron incompletas"
+            )
+        },
         401: {"description": "No autenticado"},
         403: {"description": "No tiene permisos para realizar esta acción"},
     },
@@ -134,6 +141,15 @@ async def create_event(
         event = await service.create(
             request=request,
             user_id=current_user.id
+        )
+
+    except (
+        InvalidEventDateRangeError,
+        InvalidEventLocationError
+    ) as ex:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(ex)
         )
 
     except ValueError as ex:
@@ -180,6 +196,15 @@ async def update_event(
             request=request
         )
 
+    except (
+        InvalidEventDateRangeError,
+        InvalidEventLocationError
+    ) as ex:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(ex)
+        )
+
     except ValueError as ex:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -197,14 +222,14 @@ async def update_event(
     response_model=ResponsePayload[None],
     summary="Eliminar evento",
     description=(
-        "Elimina un evento existente. "
+        "Elimina un evento existente y, en cascada, sus cronogramas, "
+        "asistencias, inscripciones y confirmaciones por correo asociadas. "
         "Solo el rol `admin` puede eliminar eventos."
     ),
     responses={
         401: {"description": "No autenticado"},
         403: {"description": "No tiene permisos para realizar esta acción"},
         404: {"description": "Evento no encontrado"},
-        409: {"description": "El evento tiene cronogramas asociados"},
     },
 )
 async def delete_event(
@@ -224,12 +249,6 @@ async def delete_event(
     except ValueError as ex:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(ex)
-        )
-
-    except EventHasSchedulesError as ex:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
             detail=str(ex)
         )
 

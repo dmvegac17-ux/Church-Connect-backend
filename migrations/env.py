@@ -9,15 +9,16 @@ from src.core.config import settings
 from src.infrastructure.database.base import Base
 
 from src.infrastructure.database.models.user_model import UserModel
-from src.infrastructure.database.models.role_model import RoleModel
 from src.infrastructure.database.models.event_model import EventModel
 from src.infrastructure.database.models.ministry_model import MinistryModel
 from src.infrastructure.database.models.schedule_model import ScheduleModel
 from src.infrastructure.database.models.registration_model import RegistrationModel
 from src.infrastructure.database.models.announcement_model import AnnouncementModel
-from src.infrastructure.database.models.audit_model import AuditModel
 from src.infrastructure.database.models.attendance_model import AttendanceModel
 from src.infrastructure.database.models.confirmacion_email_model import ConfirmacionEmailModel
+from src.infrastructure.database.models.notificaciones_model import NotificacionesModel
+from src.infrastructure.database.models.archivos_model import ArchivosModel
+from src.infrastructure.database.models.user_ministry_model import UserMinistryModel
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)

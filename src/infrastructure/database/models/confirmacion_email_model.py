@@ -3,6 +3,7 @@ from uuid import UUID
 
 from sqlalchemy import DateTime
 from sqlalchemy import Enum as SQLAlchemyEnum
+from sqlalchemy import ForeignKey
 from sqlalchemy import String
 from sqlalchemy import Text
 from sqlalchemy.orm import Mapped
@@ -20,10 +21,12 @@ class ConfirmacionEmailModel(Base):
     )
 
     usuario_id: Mapped[UUID] = mapped_column(
+        ForeignKey("usuarios.id", ondelete="CASCADE"),
         nullable=False
     )
 
     evento_id: Mapped[UUID] = mapped_column(
+        ForeignKey("event.id", ondelete="CASCADE"),
         nullable=False
     )
 

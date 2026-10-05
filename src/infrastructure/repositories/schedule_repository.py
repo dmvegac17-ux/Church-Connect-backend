@@ -71,6 +71,26 @@ class ScheduleRepository:
 
         return result.scalars().all()
 
+    async def count_by_evento_ids(
+        self,
+        evento_ids: list[UUID]
+    ) -> dict[UUID, int]:
+        if not evento_ids:
+            return {}
+
+        query = (
+            select(
+                ScheduleModel.evento_id,
+                func.count()
+            )
+            .where(ScheduleModel.evento_id.in_(evento_ids))
+            .group_by(ScheduleModel.evento_id)
+        )
+
+        result = await self.db.execute(query)
+
+        return dict(result.all())
+
     async def create(
         self,
         schedule: ScheduleModel
