@@ -17,13 +17,63 @@ Backend desarrollado con:
 
 Instalar previamente:
 
-* Python 3.13+
+* [uv](https://docs.astral.sh/uv/) (gestor de proyectos y dependencias de Python)
 * Git
+
+El proyecto fija la versión de Python en `.python-version` y en `pyproject.toml`
+(`requires-python`), por lo que **no es necesario instalar Python manualmente**:
+`uv` descarga e instala automáticamente la versión correcta la primera vez que
+se use.
+
+Instalar `uv`:
+
+## Windows
+
+PowerShell (recomendado):
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+Alternativa con winget:
+
+```powershell
+winget install --id=astral-sh.uv -e
+```
+
+Git Bash:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+> Git Bash puede ejecutar el mismo script `.sh` que Linux/Mac, ya que incluye
+> `curl` y `sh`. El comando de PowerShell **no** funciona dentro de Git Bash.
+
+## Linux / Mac
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Alternativa con Homebrew (Mac):
+
+```bash
+brew install uv
+```
+
+## Alternativa multiplataforma (con pipx)
+
+```bash
+pipx install uv
+```
+
+> Tras instalar, reiniciar la terminal para que `uv` quede disponible en el `PATH`.
 
 Verificar instalación:
 
 ```bash
-py --version
+uv --version
 git --version
 ```
 
@@ -38,81 +88,50 @@ cd Church-Connect-backend
 
 ---
 
-# Crear entorno virtual
-
-Windows:
-
-```bash
-py -m venv .venv
-```
-
-Linux / Mac:
-
-```bash
-python3 -m venv .venv
-```
-
----
-
-# Activar entorno virtual
-
-## Git Bash
-
-```bash
-source .venv/Scripts/activate
-```
-
-## PowerShell
-
-```powershell
-.venv\Scripts\Activate.ps1
-```
-
-## CMD
-
-```cmd
-.venv\Scripts\activate.bat
-```
-
-Validar activación:
-
-```bash
-py --version
-```
-
-Debe aparecer:
-
-```text
-(.venv)
-```
-
-al inicio de la consola.
-
----
-
-# Desactivar entorno virtual
-
-Para salir del entorno virtual activo, ejecutar:
-
-```bash
-deactivate
-```
-
-Si se desactivó correctamente, desaparecerá el prefijo `(.venv)` en la consola.
-
----
-
 # Instalar dependencias
 
+`uv` crea automáticamente el entorno virtual (`.venv`) e instala las
+dependencias exactas fijadas en `uv.lock`:
+
 ```bash
-pip install -r requirements.txt
+uv sync
+```
+
+Para incluir también las dependencias de desarrollo (pytest, ruff, etc.):
+
+```bash
+uv sync --group dev
 ```
 
 Verificar:
 
 ```bash
-pip list
+uv pip list
 ```
+
+> No es necesario activar el entorno virtual manualmente: basta con anteponer
+> `uv run` a cualquier comando (por ejemplo `uv run uvicorn ...`, `uv run pytest`)
+> para ejecutarlo dentro del entorno del proyecto. Si prefieres activarlo:
+>
+> * PowerShell: `.venv\Scripts\Activate.ps1`
+> * Git Bash: `source .venv/Scripts/activate`
+> * CMD: `.venv\Scripts\activate.bat`
+>
+> Para desactivarlo: `deactivate`
+
+---
+
+# Agregar o actualizar dependencias
+
+```bash
+uv add <paquete>==<version>          # dependencia de producción
+uv add --dev <paquete>==<version>    # dependencia de desarrollo
+uv remove <paquete>                  # eliminar dependencia
+uv lock --upgrade                    # actualizar todas dentro de los rangos permitidos
+```
+
+Estos comandos actualizan `pyproject.toml` y `uv.lock` automáticamente.
+`uv.lock` debe commitearse siempre para garantizar builds reproducibles.
 
 ---
 
@@ -156,13 +175,13 @@ SUPABASE_SERVICE_ROLE_KEY=
 Aplicar migraciones pendientes:
 
 ```bash
-alembic upgrade head
+uv run alembic upgrade head
 ```
 
 Verificar versión actual:
 
 ```bash
-alembic current
+uv run alembic current
 ```
 
 ---
@@ -170,7 +189,7 @@ alembic current
 # Ejecutar API
 
 ```bash
-uvicorn src.main:app --reload
+uv run uvicorn src.main:app --reload
 ```
 
 La aplicación quedará disponible en:
@@ -183,9 +202,23 @@ http://localhost:8000
 
 # Documentación Swagger
 
+Con la API corriendo, acceder desde el navegador a:
+
 ```text
 http://localhost:8000/docs
 ```
+
+Para probar endpoints protegidos:
+
+1. Ejecutar `POST /api/v1/auth/login` con `correo`/`contrasena` válidos y copiar el `data.access_token` de la respuesta.
+2. Hacer clic en el botón **Authorize** (esquina superior derecha, ícono de candado).
+3. Pegar el token en el campo **Value** (sin el prefijo `Bearer`, Swagger lo agrega solo) y confirmar.
+4. Los endpoints con candado 🔒 quedarán autenticados para el resto de la sesión.
+
+> El esquema de seguridad es `HTTPBearer` (pegar token manual) en vez de
+> OAuth2 con formulario automático: es más simple y evita bugs de autofill
+> de swagger-ui en algunos navegadores/versiones. Todos los endpoints,
+> incluido `/auth/login`, usan JSON de forma consistente.
 
 ---
 
@@ -235,25 +268,25 @@ Respuesta esperada:
 Crear migración:
 
 ```bash
-alembic revision --autogenerate -m "descripcion"
+uv run alembic revision --autogenerate -m "descripcion"
 ```
 
 Aplicar migraciones:
 
 ```bash
-alembic upgrade head
+uv run alembic upgrade head
 ```
 
 Revertir última migración:
 
 ```bash
-alembic downgrade -1
+uv run alembic downgrade -1
 ```
 
 Mostrar historial:
 
 ```bash
-alembic history
+uv run alembic history
 ```
 
 ---
@@ -261,13 +294,13 @@ alembic history
 # Ejecutar pruebas
 
 ```bash
-pytest
+uv run pytest
 ```
 
 Cobertura:
 
 ```bash
-pytest --cov=src
+uv run pytest --cov=src
 ```
 
 ---
@@ -286,3 +319,4 @@ src/
 tests/
 migrations/
 ```
+If you miss the Terminal-style experience of the previous extension, don’t worry! It hasn’t gone anywhere. Use the Claude Code: Use Terminal setting to switch back.

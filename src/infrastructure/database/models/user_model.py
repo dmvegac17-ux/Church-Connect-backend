@@ -3,10 +3,12 @@ from uuid import UUID
 
 from sqlalchemy import Boolean
 from sqlalchemy import DateTime
+from sqlalchemy import Enum as SQLAlchemyEnum
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 
+from src.core.constants.enums import UserRole
 from src.infrastructure.database.base import Base
 
 
@@ -35,13 +37,24 @@ class UserModel(Base):
         index=True
     )
 
+    contrasena: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False
+    )
+
     telefono: Mapped[str | None] = mapped_column(
         String(50),
         nullable=True
     )
 
-    rol: Mapped[str] = mapped_column(
-        String(100),
+    rol: Mapped[UserRole] = mapped_column(
+        SQLAlchemyEnum(
+            UserRole,
+            name="user_role",
+            native_enum=False,
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+            length=50
+        ),
         nullable=False
     )
 
@@ -54,3 +67,4 @@ class UserModel(Base):
         DateTime(timezone=True),
         nullable=True
     )
+    
