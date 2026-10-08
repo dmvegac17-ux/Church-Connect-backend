@@ -4,6 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import EmailStr
+from pydantic import Field
 from pydantic import field_validator
 
 from src.core.constants.enums import UserRole
@@ -20,7 +21,7 @@ class UserCreate(BaseModel):
     nombre: str
     apellido: str
     correo: EmailStr
-    contrasena: str
+    contrasena: str = Field(..., min_length=8, max_length=20)
     telefono: str | None = None
     rol: UserRole
     activo: bool = True
@@ -32,7 +33,7 @@ class UserUpdate(BaseModel):
     nombre: str | None = None
     apellido: str | None = None
     correo: EmailStr | None = None
-    contrasena: str | None = None
+    contrasena: str | None = Field(None, min_length=8, max_length=20)
     telefono: str | None = None
     rol: UserRole | None = None
     activo: bool | None = None

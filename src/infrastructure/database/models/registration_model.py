@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import DateTime
+from sqlalchemy import ForeignKey
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 
@@ -16,10 +17,12 @@ class RegistrationModel(Base):
     )
 
     usuario_id: Mapped[UUID] = mapped_column(
+        ForeignKey("usuarios.id", ondelete="CASCADE"),
         nullable=False
     )
 
     evento_id: Mapped[UUID] = mapped_column(
+        ForeignKey("event.id", ondelete="CASCADE"),
         nullable=False
     )
 

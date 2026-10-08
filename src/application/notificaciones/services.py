@@ -1,34 +1,75 @@
-from datetime import UTC
-from datetime import datetime
-from uuid import UUID
-from uuid import uuid4
+from datetime import UTC, datetime
+from html import escape
+from uuid import UUID, uuid4
 
-from src.api.v1.notificaciones.schemas import NotificationCreate
-from src.api.v1.notificaciones.schemas import NotificationUpdate
+from src.api.v1.notificaciones.schemas import (
+    NotificationBulkCreate,
+    NotificationCreate,
+    NotificationUpdate,
+)
+from src.core.logging.logger import logger
 from src.infrastructure.database.models.notificaciones_model import NotificacionesModel
-from src.infrastructure.repositories.notificaciones_repository import NotificacionesRepository
+from src.infrastructure.database.models.user_model import UserModel
+from src.infrastructure.email.email_service import EmailService
+from src.infrastructure.repositories.notificaciones_repository import (
+    NotificacionesRepository,
+)
+from src.infrastructure.repositories.user_repository import UserRepository
+
+
+class UserNotFoundError(Exception):
+    pass
+
+
+def _firmar_mensaje(
+    mensaje: str,
+    remitente: UserModel
+) -> str:
+    """
+    Agrega la firma "Atte, <nombre del remitente>" al final del mensaje
+    (HTML enriquecido), como un párrafo aparte.
+    """
+    nombre_completo = remitente.nombre
+
+    if remitente.apellido:
+        nombre_completo = f"{remitente.nombre} {remitente.apellido}"
+
+    return (
+        f"{mensaje}<div><br></div><div>Atte, {escape(nombre_completo)}</div>"
+    )
 
 
 class NotificacionesService:
 
     def __init__(
         self,
-        repository: NotificacionesRepository
+        repository: NotificacionesRepository,
+        user_repository: UserRepository,
+        email_service: EmailService
     ):
         self.repository = repository
+        self.user_repository = user_repository
+        self.email_service = email_service
 
     async def get_all(
         self,
         limit: int,
-        offset: int
+        offset: int,
+        usuario_id: UUID | None = None
     ):
         return await self.repository.get_all(
             limit=limit,
-            offset=offset
+            offset=offset,
+            usuario_id=usuario_id
         )
 
-    async def count(self) -> int:
-        return await self.repository.count()
+    async def count(
+        self,
+        usuario_id: UUID | None = None
+    ) -> int:
+        return await self.repository.count(
+            usuario_id
+        )
 
     async def get_by_id(
         self,
@@ -48,20 +89,103 @@ class NotificacionesService:
     async def create(
         self,
         request: NotificationCreate,
-        user_id: UUID
+        remitente: UserModel
     ):
+        user = await self.user_repository.get_by_id(
+            request.usuario_id
+        )
+
+        if not user:
+            raise UserNotFoundError(
+                "Usuario no encontrado"
+            )
+
+        mensaje_firmado = _firmar_mensaje(
+            request.mensaje,
+            remitente
+        )
+
         notificacion = NotificacionesModel(
             id=uuid4(),
-            usuario_id=user_id,
+            usuario_id=request.usuario_id,
             titulo=request.titulo,
-            mensaje=request.mensaje,
+            mensaje=mensaje_firmado,
             leida=False,
             fecha_envio=datetime.now(UTC)
         )
 
-        return await self.repository.create(
+        created = await self.repository.create(
             notificacion
         )
+
+        await self.email_service.send_notification(
+            to=user.correo,
+            titulo=request.titulo,
+            mensaje=mensaje_firmado,
+            usuario_nombre=user.nombre
+        )
+
+        return created
+
+    async def create_bulk(
+        self,
+        request: NotificationBulkCreate,
+        remitente: UserModel
+    ) -> tuple[list[NotificacionesModel], list[str]]:
+        creadas: list[NotificacionesModel] = []
+        errores: list[str] = []
+        mensaje_firmado = _firmar_mensaje(
+            request.mensaje,
+            remitente
+        )
+
+        for usuario_id in request.usuarios_ids:
+            try:
+                user = await self.user_repository.get_by_id(
+                    usuario_id
+                )
+
+                if not user:
+                    errores.append(
+                        f"{usuario_id}: Usuario no encontrado"
+                    )
+                    continue
+
+                notificacion = NotificacionesModel(
+                    id=uuid4(),
+                    usuario_id=usuario_id,
+                    titulo=request.titulo,
+                    mensaje=mensaje_firmado,
+                    leida=False,
+                    fecha_envio=datetime.now(UTC)
+                )
+
+                created = await self.repository.create(
+                    notificacion
+                )
+
+                creadas.append(created)
+
+                await self.email_service.send_notification(
+                    to=user.correo,
+                    titulo=request.titulo,
+                    mensaje=mensaje_firmado,
+                    usuario_nombre=user.nombre
+                )
+
+            except Exception as ex:
+                await self.repository.rollback()
+
+                logger.exception(
+                    "Fallo al crear la notificación masiva para %s",
+                    usuario_id
+                )
+
+                errores.append(
+                    f"{usuario_id}: {ex}"
+                )
+
+        return creadas, errores
 
     async def update(
         self,

@@ -19,6 +19,7 @@ Roles del sistema: `ADMIN`, `PARTICIPANT`, `MEMBER`.
 3. **Dado** que `nombre` o `apellido` no se envían (o van vacíos), **cuando** intento registrarme, **entonces** recibo `422` con el detalle del campo faltante.
 4. **Dado** un `correo` ya registrado previamente, **cuando** intento registrarme con ese mismo correo, **entonces** recibo `400` con mensaje "El correo ya se encuentra registrado".
 5. **Dado** un registro exitoso, **cuando** consulto la base de datos, **entonces** la `contrasena` almacenada está hasheada (bcrypt), nunca en texto plano.
+6. **Dado** una `contrasena` con menos de 8 caracteres o más de 20 caracteres, **cuando** intento registrarme, **entonces** recibo `422` con el detalle de la restricción de longitud.
 
 ---
 
@@ -105,10 +106,12 @@ Roles del sistema: `ADMIN`, `PARTICIPANT`, `MEMBER`.
 2. **Dado** un usuario `PARTICIPANT` o `MEMBER`, **cuando** actualiza campos de **su propio** perfil que **no sean** `rol` ni `activo` (ej. `nombre`, `telefono`), **entonces** recibe `200`.
 3. **Dado** un usuario `PARTICIPANT` o `MEMBER`, **cuando** intenta enviar `rol` y/o `activo` en el body (así sea sobre su propio perfil), **entonces** recibe `403` con mensaje "No tiene permisos para modificar el rol o el estado del usuario", y ningún campo se actualiza.
 4. **Dado** cualquier usuario autenticado, **cuando** intenta actualizar el perfil de **otro** usuario que no sea el suyo y no es `ADMIN`, **entonces** recibe `403`.
-5. **Dado** cualquier usuario (incluido `ADMIN`), **cuando** envía el campo `contrasena` en el body de actualización de un `id` que **no es el suyo**, **entonces** recibe `403` con mensaje "No tiene permisos para modificar la contraseña de otro usuario" — **sin excepción para `ADMIN`**.
+5. **Dado** un usuario `PARTICIPANT` o `MEMBER`, **cuando** envía el campo `contrasena` en el body de actualización de un `id` que **no es el suyo**, **entonces** recibe `403` con mensaje "No tiene permisos para modificar la contraseña de otro usuario".
 6. **Dado** cualquier usuario, **cuando** envía `contrasena` para actualizar **su propio** perfil, **entonces** recibe `200` y la contraseña se actualiza (hasheada).
-7. **Dado** un body que solo contiene `{"apellido": "Nuevo"}`, **cuando** se envía, **entonces** solo se actualiza `apellido`; el resto de campos (`nombre`, `correo`, `telefono`, `rol`, `activo`, `contrasena`) permanece sin cambios.
-8. **Dado** un `correo` que ya pertenece a otro usuario, **cuando** se intenta actualizar a ese correo, **entonces** recibe `400`.
+7. **Dado** un usuario `ADMIN`, **cuando** envía el campo `contrasena` en el body de actualización de **cualquier otro** usuario, **entonces** recibe `200` y la contraseña de ese usuario se actualiza (hasheada).
+8. **Dado** un body que solo contiene `{"apellido": "Nuevo"}`, **cuando** se envía, **entonces** solo se actualiza `apellido`; el resto de campos (`nombre`, `correo`, `telefono`, `rol`, `activo`, `contrasena`) permanece sin cambios.
+9. **Dado** un `correo` que ya pertenece a otro usuario, **cuando** se intenta actualizar a ese correo, **entonces** recibe `400`.
+10. **Dado** un usuario con permiso para cambiar la `contrasena` (propia, o de otro si es `ADMIN`), **cuando** envía una `contrasena` con menos de 8 caracteres o más de 20 caracteres, **entonces** recibe `422` con el detalle de la restricción de longitud.
 
 ---
 
@@ -142,7 +145,7 @@ Roles del sistema: `ADMIN`, `PARTICIPANT`, `MEMBER`.
 | Actualizar datos ajenos (excepto rol/activo) | ✅ | ❌ 403 | ❌ 403 |
 | Actualizar `rol`/`activo` propio o ajeno | ✅ | ❌ 403 | ❌ 403 |
 | Actualizar `contrasena` propia | ✅ | ✅ | ✅ |
-| Actualizar `contrasena` ajena | ❌ 403 | ❌ 403 | ❌ 403 |
+| Actualizar `contrasena` ajena | ✅ | ❌ 403 | ❌ 403 |
 | Eliminar usuario (propio o ajeno) | ✅ | ❌ 403 | ❌ 403 |
 
 **Notas para QA:**

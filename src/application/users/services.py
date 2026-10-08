@@ -2,11 +2,17 @@ from datetime import datetime, UTC
 from uuid import UUID
 from uuid import uuid4
 
+from sqlalchemy.exc import IntegrityError
+
 from src.api.v1.users.schemas import UserCreate
 from src.api.v1.users.schemas import UserUpdate
 from src.core.security.hashing import hash_password
 from src.infrastructure.database.models.user_model import UserModel
 from src.infrastructure.repositories.user_repository import UserRepository
+
+
+class UserHasRelatedRecordsError(Exception):
+    pass
 
 
 class UserService:
@@ -120,4 +126,12 @@ class UserService:
                 "Usuario no encontrado"
             )
 
-        await self.repository.delete(user)
+        try:
+            await self.repository.delete(user)
+
+        except IntegrityError:
+            raise UserHasRelatedRecordsError(
+                "No se puede eliminar el usuario porque tiene registros "
+                "asociados (notificaciones, inscripciones, etc.). "
+                "Elimínalos primero."
+            )

@@ -3,6 +3,7 @@ from uuid import UUID
 
 from sqlalchemy import Boolean
 from sqlalchemy import DateTime
+from sqlalchemy import ForeignKey
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
@@ -18,10 +19,12 @@ class AttendanceModel(Base):
     )
 
     usuario_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("usuarios.id", ondelete="CASCADE"),
         nullable=True
     )
 
     evento_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("event.id", ondelete="CASCADE"),
         nullable=True
     )
 

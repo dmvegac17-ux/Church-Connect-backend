@@ -3,19 +3,24 @@ from uuid import UUID
 
 from pydantic import BaseModel
 from pydantic import ConfigDict
+from pydantic import Field
 
 
 class NotificationCreate(BaseModel):
     titulo: str
     mensaje: str
-    tipo: str
     usuario_id: UUID
+
+
+class NotificationBulkCreate(BaseModel):
+    titulo: str
+    mensaje: str
+    usuarios_ids: list[UUID] = Field(default_factory=list)
 
 
 class NotificationUpdate(BaseModel):
     titulo: str | None = None
     mensaje: str | None = None
-    tipo: str | None = None
     leida: bool | None = None
 
 
@@ -27,10 +32,9 @@ class NotificationResponse(BaseModel):
     id: UUID
     titulo: str
     mensaje: str
-    tipo: str
     usuario_id: UUID
     leida: bool
-    fecha_creacion: datetime
+    fecha_envio: datetime
 
 
 class NotificationListResponse(BaseModel):
