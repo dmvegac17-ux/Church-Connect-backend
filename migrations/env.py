@@ -19,6 +19,7 @@ from src.infrastructure.database.models.confirmacion_email_model import Confirma
 from src.infrastructure.database.models.notificaciones_model import NotificacionesModel
 from src.infrastructure.database.models.archivos_model import ArchivosModel
 from src.infrastructure.database.models.user_ministry_model import UserMinistryModel
+from src.infrastructure.database.models.invitacion_participacion_model import InvitacionParticipacionModel
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)

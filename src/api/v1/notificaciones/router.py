@@ -1,3 +1,4 @@
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -31,18 +32,22 @@ router = APIRouter(
     response_model=ResponsePayload[list[NotificationResponse]],
     summary="Listar notificaciones",
     description=(
-        "Devuelve un listado paginado de las notificaciones del usuario "
-        "autenticado. Nadie puede ver notificaciones de otro usuario, "
-        "sin importar su rol (ni siquiera `admin`)."
+        "Devuelve un listado paginado de notificaciones, de la más reciente "
+        "a la más antigua. Por defecto (`alcance=propias`) solo las del "
+        "usuario autenticado. Con `alcance=todas` devuelve las de todos "
+        "los usuarios: solo el rol `admin` puede pedirlo, para gestionar "
+        "los avisos enviados."
     ),
     responses={
         401: {"description": "No autenticado"},
+        403: {"description": "Solo `admin` puede usar `alcance=todas`"},
     },
 )
 
 async def get_notificaciones(
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    alcance: Literal["propias", "todas"] = Query("propias"),
     service: NotificacionesService = Depends(
         get_notificacion_service
     ),
@@ -54,7 +59,13 @@ async def get_notificaciones(
         )
     )
 ):
-    usuario_id = current_user.id
+    if alcance == "todas" and current_user.rol != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tiene permisos para ver notificaciones de otros usuarios"
+        )
+
+    usuario_id = None if alcance == "todas" else current_user.id
 
     notificaciones = await service.get_all(
         limit=limit,

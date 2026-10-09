@@ -8,6 +8,9 @@ from pydantic import Field
 from pydantic import field_validator
 
 from src.core.constants.enums import UserRole
+from src.core.schemas.fields import Email
+from src.core.schemas.fields import PersonName
+from src.core.schemas.fields import Phone
 
 
 def _normalize_role(value: object) -> object:
@@ -18,11 +21,11 @@ def _normalize_role(value: object) -> object:
 
 
 class UserCreate(BaseModel):
-    nombre: str
-    apellido: str
-    correo: EmailStr
+    nombre: PersonName
+    apellido: PersonName
+    correo: Email
     contrasena: str = Field(..., min_length=8, max_length=20)
-    telefono: str | None = None
+    telefono: Phone | None = None
     rol: UserRole
     activo: bool = True
 
@@ -30,11 +33,11 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
-    nombre: str | None = None
-    apellido: str | None = None
-    correo: EmailStr | None = None
+    nombre: PersonName | None = None
+    apellido: PersonName | None = None
+    correo: Email | None = None
     contrasena: str | None = Field(None, min_length=8, max_length=20)
-    telefono: str | None = None
+    telefono: Phone | None = None
     rol: UserRole | None = None
     activo: bool | None = None
 
