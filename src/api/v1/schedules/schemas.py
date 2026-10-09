@@ -34,4 +34,6 @@ class ScheduleResponse(BaseModel):
     hora_inicio: datetime
     hora_fin: datetime
     responsable: str
+    # Usuario con la invitación activa de la actividad (si la hay).
+    responsable_id: UUID | None = None
     descripcion: str | None = None

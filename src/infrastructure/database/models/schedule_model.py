@@ -49,6 +49,15 @@ class ScheduleModel(Base):
         nullable=False
     )
 
+    # Usuario asignado a la actividad. Se mantiene sincronizado con la
+    # invitación activa (ver `ParticipacionService`); `responsable` conserva
+    # el nombre visible para no romper los cronogramas anteriores.
+    responsable_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("usuarios.id", ondelete="SET NULL"),
+        nullable=True
+    )
+
     descripcion: Mapped[str | None] = mapped_column(
         Text,
         nullable=True
