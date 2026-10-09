@@ -2,6 +2,10 @@ from pydantic import BaseModel
 from pydantic import EmailStr
 from pydantic import Field
 
+from src.core.schemas.fields import Email
+from src.core.schemas.fields import PersonName
+from src.core.schemas.fields import Phone
+
 
 class LoginRequest(BaseModel):
     correo: EmailStr
@@ -9,11 +13,11 @@ class LoginRequest(BaseModel):
 
 
 class RegisterRequest(BaseModel):
-    nombre: str
-    apellido: str
-    correo: EmailStr
+    nombre: PersonName
+    apellido: PersonName
+    correo: Email
     contrasena: str = Field(..., min_length=8, max_length=20)
-    telefono: str | None = None
+    telefono: Phone | None = None
 
 
 class TokenResponse(BaseModel):
