@@ -27,7 +27,12 @@ class NotificacionesRepository:
                 NotificacionesModel.usuario_id == usuario_id
             )
 
-        query = query.limit(limit).offset(offset)
+        query = (
+            query
+            .order_by(NotificacionesModel.fecha_envio.desc())
+            .limit(limit)
+            .offset(offset)
+        )
 
         result = await self.db.execute(query)
 
