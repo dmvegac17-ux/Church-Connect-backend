@@ -27,6 +27,9 @@ os.environ.update(
         "JWT_ALGORITHM": "HS256",
         "MAIL_SMTP_HOST": "",
         "MAIL_SMTP_FROM": "",
+        # Nunca el Storage real: sin URL ni clave, el cliente no sale a la red.
+        "SUPABASE_URL": "",
+        "SUPABASE_SERVICE_ROLE_KEY": "",
     }
 )
 
