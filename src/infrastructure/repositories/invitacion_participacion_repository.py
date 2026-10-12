@@ -3,6 +3,7 @@ from uuid import UUID
 
 from sqlalchemy import and_
 from sqlalchemy import case
+from sqlalchemy import delete
 from sqlalchemy import exists
 from sqlalchemy import func
 from sqlalchemy import or_
@@ -13,12 +14,12 @@ from sqlalchemy.orm import aliased
 
 from src.core.constants.enums import EstadoEnvioInvitacion
 from src.core.constants.enums import EstadoRespuestaInvitacion
-from src.core.constants.enums import UserRole
 from src.infrastructure.database.models.event_model import EventModel
 from src.infrastructure.database.models.invitacion_participacion_model import (
     InvitacionParticipacionModel,
 )
 from src.infrastructure.database.models.ministry_model import MinistryModel
+from src.infrastructure.database.models.registration_model import RegistrationModel
 from src.infrastructure.database.models.schedule_model import ScheduleModel
 from src.infrastructure.database.models.user_ministry_model import UserMinistryModel
 from src.infrastructure.database.models.user_model import UserModel
@@ -92,7 +93,9 @@ class InvitacionParticipacionRepository:
         return and_(
             Inv.estado_respuesta.in_(ESTADOS_LIBERADOS),
             ~exists().where(reemplazo.reemplaza_invitacion_id == Inv.id),
-            ScheduleModel.hora_inicio >= limite_inicio
+            ScheduleModel.hora_inicio >= limite_inicio,
+            # Una actividad eliminada no espera a nadie.
+            ScheduleModel.cancelada_en.is_(None)
         )
 
     @staticmethod
@@ -315,14 +318,20 @@ class InvitacionParticipacionRepository:
         result = await self.db.execute(
             select(ScheduleModel, EventModel)
             .join(EventModel, EventModel.id == ScheduleModel.evento_id)
-            .where(ScheduleModel.id == actividad_id)
+            .where(
+                ScheduleModel.id == actividad_id,
+                ScheduleModel.cancelada_en.is_(None)
+            )
         )
 
         return result.first()
 
     async def actividades_de_evento(self, evento_id: UUID) -> list[UUID]:
         result = await self.db.execute(
-            select(ScheduleModel.id).where(ScheduleModel.evento_id == evento_id)
+            select(ScheduleModel.id).where(
+                ScheduleModel.evento_id == evento_id,
+                ScheduleModel.cancelada_en.is_(None)
+            )
         )
 
         return list(result.scalars().all())
@@ -356,11 +365,8 @@ class InvitacionParticipacionRepository:
         return {usuario.id: usuario for usuario in result.scalars().all()}
 
     async def usuarios_invitables(self, q: str | None, limit: int):
-        """Usuarios activos que pueden recibir invitaciones (no administradores)."""
-        query = select(UserModel).where(
-            UserModel.activo.is_(True),
-            UserModel.rol.in_([UserRole.MEMBER, UserRole.PARTICIPANT])
-        )
+        """Usuarios activos: cualquiera puede participar, también un administrador."""
+        query = select(UserModel).where(UserModel.activo.is_(True))
 
         if q:
             patron = f"%{q}%"
@@ -479,3 +485,48 @@ class InvitacionParticipacionRepository:
             .values(**valores)
             .execution_options(synchronize_session=False)
         )
+
+    # ── Aforo ───────────────────────────────────────────────────────────
+
+    async def bloquear_evento(self, evento_id: UUID) -> None:
+        """
+        Serializa los cambios de aforo del evento con las inscripciones, que
+        bloquean la misma fila antes de contar cupos.
+        """
+        await self.db.execute(
+            select(EventModel.id)
+            .where(EventModel.id == evento_id)
+            .with_for_update()
+        )
+
+    async def eliminar_inscripcion(self, usuario_id: UUID, evento_id: UUID) -> bool:
+        """Un participante ya ocupa aforo: su inscripción como público sobra."""
+        result = await self.db.execute(
+            delete(RegistrationModel)
+            .where(
+                RegistrationModel.usuario_id == usuario_id,
+                RegistrationModel.evento_id == evento_id
+            )
+            .execution_options(synchronize_session=False)
+        )
+
+        return result.rowcount > 0
+
+    async def inscritos_en_evento(self, evento_id: UUID) -> set[UUID]:
+        result = await self.db.execute(
+            select(RegistrationModel.usuario_id)
+            .where(RegistrationModel.evento_id == evento_id)
+        )
+
+        return set(result.scalars().all())
+
+    async def participantes_de_evento(self, evento_id: UUID) -> set[UUID]:
+        result = await self.db.execute(
+            select(ScheduleModel.responsable_id)
+            .where(
+                ScheduleModel.evento_id == evento_id,
+                ScheduleModel.responsable_id.is_not(None)
+            )
+        )
+
+        return set(result.scalars().all())

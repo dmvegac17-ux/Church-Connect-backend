@@ -63,9 +63,15 @@ class UserRepository:
 
     async def create(
         self,
-        user: UserModel
+        user: UserModel,
+        junto_con=()
     ):
         self.db.add(user)
+
+        if junto_con:
+            # La cuenta se inserta primero: lo demás la referencia.
+            await self.db.flush()
+            self.db.add_all(junto_con)
 
         await self.db.commit()
 

@@ -11,8 +11,13 @@ from fastapi import status
 from src.api.dependencies.notificaciones import get_notificacion_service
 from src.api.v1.notificaciones.schemas import NotificationBulkCreate
 from src.api.v1.notificaciones.schemas import NotificationCreate
+from src.api.v1.notificaciones.schemas import NotificationMarkRequest
+from src.api.v1.notificaciones.schemas import NotificationMarkResponse
+from src.api.v1.notificaciones.schemas import UnreadCountResponse
 from src.api.v1.notificaciones.schemas import NotificationResponse
 from src.api.v1.notificaciones.schemas import NotificationUpdate
+from src.application.notificaciones.services import MARCAR_MAXIMO
+from src.application.notificaciones.services import NotificacionAjenaError
 from src.application.notificaciones.services import NotificacionesService
 from src.application.notificaciones.services import UserNotFoundError
 from src.core.constants.enums import UserRole
@@ -54,7 +59,6 @@ async def get_notificaciones(
     current_user: UserModel = Depends(
         require_roles(
             UserRole.ADMIN,
-            UserRole.PARTICIPANT,
             UserRole.MEMBER
         )
     )
@@ -82,6 +86,122 @@ async def get_notificaciones(
         message="Notificaciones obtenidas exitosamente",
         meta={"totalNotificaciones": total}
     )
+# Estas rutas van antes de `/{notificacion_id}`: sus nombres no son ids.
+@router.get(
+    "/no-leidas",
+    response_model=ResponsePayload[UnreadCountResponse],
+    summary="Contar notificaciones no leídas",
+    description=(
+        "Cuántas notificaciones propias están sin leer. Es una consulta de "
+        "conteo: no trae la bandeja. La usa el contador de la barra superior."
+    ),
+    responses={401: {"description": "No autenticado"}},
+)
+async def contar_no_leidas(
+    service: NotificacionesService = Depends(
+        get_notificacion_service
+    ),
+    current_user: UserModel = Depends(
+        require_roles(
+            UserRole.ADMIN,
+            UserRole.MEMBER
+        )
+    )
+):
+    return ResponsePayload.ok(
+        data={"total": await service.contar_no_leidas(current_user)},
+        message="Conteo obtenido exitosamente"
+    )
+
+
+@router.put(
+    "/leidas",
+    response_model=ResponsePayload[NotificationMarkResponse],
+    summary="Marcar varias notificaciones",
+    description=(
+        "Marca como leídas (o no leídas, con `leida: false`) varias "
+        "notificaciones propias con una sola sentencia. Todo o nada: si "
+        "algún id no existe o es de otra persona, no cambia ninguna."
+    ),
+    responses={
+        400: {"description": "Sin ids, o más de los permitidos por petición"},
+        401: {"description": "No autenticado"},
+        403: {"description": "Alguna notificación no existe o no te pertenece"},
+    },
+)
+async def marcar_notificaciones(
+    request: NotificationMarkRequest,
+    service: NotificacionesService = Depends(
+        get_notificacion_service
+    ),
+    current_user: UserModel = Depends(
+        require_roles(
+            UserRole.ADMIN,
+            UserRole.MEMBER
+        )
+    )
+):
+    if not request.ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Indica al menos una notificación"
+        )
+
+    if len(request.ids) > MARCAR_MAXIMO:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Se pueden marcar como máximo {MARCAR_MAXIMO} notificaciones "
+                "por petición"
+            )
+        )
+
+    try:
+        actualizadas = await service.marcar(
+            current_user,
+            request.ids,
+            request.leida
+        )
+
+    except NotificacionAjenaError as ex:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(ex)
+        )
+
+    return ResponsePayload.ok(
+        data={"actualizadas": actualizadas},
+        message="Notificaciones actualizadas exitosamente"
+    )
+
+
+@router.put(
+    "/leidas/todas",
+    response_model=ResponsePayload[NotificationMarkResponse],
+    summary="Marcar todas como leídas",
+    description=(
+        "Marca como leídas todas las notificaciones propias sin leer, con "
+        "una sola sentencia y sin enviar ids."
+    ),
+    responses={401: {"description": "No autenticado"}},
+)
+async def marcar_todas_leidas(
+    service: NotificacionesService = Depends(
+        get_notificacion_service
+    ),
+    current_user: UserModel = Depends(
+        require_roles(
+            UserRole.ADMIN,
+            UserRole.MEMBER
+        )
+    )
+):
+    return ResponsePayload.ok(
+        data={"actualizadas": await service.marcar_todas_leidas(current_user)},
+        message="Notificaciones marcadas como leídas"
+    )
+
+
 @router.get(
     "/{notificacion_id}",
     response_model=ResponsePayload[NotificationResponse],
@@ -105,7 +225,6 @@ async def get_notificacion(
     current_user: UserModel = Depends(
         require_roles(
             UserRole.ADMIN,
-            UserRole.PARTICIPANT,
             UserRole.MEMBER
         )
     )
@@ -288,7 +407,6 @@ async def update_notificacion(
     current_user: UserModel = Depends(
         require_roles(
             UserRole.ADMIN,
-            UserRole.PARTICIPANT,
             UserRole.MEMBER
         )
     )
@@ -339,8 +457,8 @@ async def update_notificacion(
     response_model=ResponsePayload[None],
     summary="Eliminar notificación",
     description=(
-        "Elimina una notificación existente. "
-        "Solo el rol `admin` puede eliminar notificaciones."
+        "Elimina una notificación existente. El rol `admin` puede "
+        "eliminar cualquiera; el resto, solo las propias."
     ),
     responses={
         401: {"description": "No autenticado"},
@@ -354,10 +472,24 @@ async def delete_notificacion(
         get_notificacion_service
     ),
     current_user: UserModel = Depends(
-        require_roles(UserRole.ADMIN)
+        require_roles(
+            UserRole.ADMIN,
+            UserRole.MEMBER
+        )
     )
 ):
     try:
+        if current_user.rol != UserRole.ADMIN:
+            notificacion = await service.get_by_id(
+                notificacion_id
+            )
+
+            if notificacion.usuario_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="No tiene permisos para eliminar esta notificación"
+                )
+
         await service.delete(
             notificacion_id
         )

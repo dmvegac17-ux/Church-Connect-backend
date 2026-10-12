@@ -212,7 +212,9 @@ async def listar_participaciones(
     status_code=status.HTTP_201_CREATED,
     summary="Invitar a un participante a una actividad",
     description=(
-        "Crea la invitación y la envía por correo. Una actividad solo admite "
+        "Crea la invitación y la envía por correo. Si el administrador se "
+        "asigna a sí mismo queda aceptada de inmediato, sin correo ni plazo "
+        "(`dias_para_confirmar` se ignora). Una actividad solo admite "
         "una invitación activa: si ya tiene una, responde `409`. Si la "
         "anterior quedó liberada (rechazada, vencida o cancelada), pasa a "
         "`reasignada` y la nueva queda enlazada a ella."
@@ -275,7 +277,7 @@ async def participaciones_de_evento(
     response_model=ResponsePayload[list[ParticipanteElegible]],
     summary="Usuarios que pueden recibir la invitación de una actividad",
     description=(
-        "Usuarios activos (miembros y participantes), sin el asignado actual. "
+        "Usuarios activos (miembros y administradores), sin el asignado actual. "
         "`cruce_horario` marca, sin excluirlos, a quienes tienen otra "
         "actividad activa que se cruza."
     ),

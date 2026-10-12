@@ -14,6 +14,9 @@ _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _NOTIFICATION_TEMPLATE = Template(
     (_TEMPLATES_DIR / "notification.html").read_text(encoding="utf-8")
 )
+_PASSWORD_RESET_TEMPLATE = Template(
+    (_TEMPLATES_DIR / "password_reset.html").read_text(encoding="utf-8")
+)
 
 
 class EmailService:
@@ -66,6 +69,41 @@ class EmailService:
             to,
             titulo,
             mensaje_texto,
+            html=html
+        )
+
+    async def send_password_reset(
+        self,
+        to: str,
+        usuario_nombre: str,
+        enlace: str,
+        minutos: int
+    ) -> bool:
+        """
+        Envía el enlace para restablecer la contraseña con su plantilla
+        (`templates/password_reset.html`) y una versión en texto plano.
+        """
+        html = _PASSWORD_RESET_TEMPLATE.substitute(
+            usuario_nombre=escape(usuario_nombre),
+            enlace=escape(enlace, quote=True),
+            minutos=minutos,
+            anio=datetime.now(UTC).year
+        )
+        texto = (
+            f"Hola, {usuario_nombre}\n\n"
+            "Recibimos una solicitud para cambiar la contraseña de tu cuenta "
+            "de Church Connect. Abre este enlace para elegir una nueva:\n\n"
+            f"{enlace}\n\n"
+            f"El enlace vence en {minutos} minutos y solo se puede usar una vez.\n\n"
+            "Si no solicitaste este cambio, ignora este correo: tu contraseña "
+            "seguirá siendo la misma.\n\n"
+            "Church Connect · Conectados con tu fe"
+        )
+
+        return await self._dispatch(
+            to,
+            "Restablece tu contraseña de Church Connect",
+            texto,
             html=html
         )
 

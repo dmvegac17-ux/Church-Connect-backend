@@ -5,6 +5,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.infrastructure.database.models.event_model import EventModel
+from src.infrastructure.database.models.registration_model import RegistrationModel
+from src.infrastructure.database.models.user_model import UserModel
 
 
 class EventRepository:
@@ -64,6 +66,27 @@ class EventRepository:
         result = await self.db.execute(query)
 
         return result.scalar_one_or_none()
+
+    async def rollback(self) -> None:
+        await self.db.rollback()
+
+    async def registered_users(
+        self,
+        event_id: UUID
+    ) -> list[UserModel]:
+        """Personas inscritas como público en el evento."""
+        result = await self.db.execute(
+            select(UserModel)
+            .join(RegistrationModel, RegistrationModel.usuario_id == UserModel.id)
+            .where(RegistrationModel.evento_id == event_id)
+            .order_by(UserModel.nombre.asc())
+        )
+
+        return list(result.scalars().all())
+
+    def add_all(self, entities: list) -> None:
+        """Suma entidades a la transacción en curso (sin confirmar)."""
+        self.db.add_all(entities)
 
     async def create(
         self,

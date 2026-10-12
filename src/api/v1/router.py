@@ -13,6 +13,7 @@ from src.api.v1.schedules.router import router as schedules_router
 from src.api.v1.archivos.router import router as archivos_router
 from src.api.v1.confirmaciones_email.router import router as confirmaciones_email_router
 from src.api.v1.participaciones.router import router as participaciones_router
+from src.api.v1.legal.router import router as legal_router
 
 router = APIRouter()
 
@@ -38,3 +39,4 @@ router.include_router(registrations_router)
 router.include_router(attendances_router)
 router.include_router(confirmaciones_email_router)
 router.include_router(participaciones_router)
+router.include_router(legal_router)

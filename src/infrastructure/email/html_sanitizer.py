@@ -7,7 +7,7 @@ from html.parser import HTMLParser
 # letra. El backend no confía en que el HTML ya llegó sanitizado (la API se
 # puede llamar directo, sin pasar por el frontend), así que se vuelve a
 # aplicar aquí antes de insertarlo en el correo.
-_ALLOWED_TAGS = {"b", "strong", "i", "em", "u", "span", "font", "br", "div", "p"}
+_ALLOWED_TAGS = {"b", "strong", "i", "em", "u", "s", "span", "font", "br", "div", "p"}
 _ALLOWED_ATTRS = {"style", "color", "face"}
 _BLOCK_TAGS = {"div", "p"}
 

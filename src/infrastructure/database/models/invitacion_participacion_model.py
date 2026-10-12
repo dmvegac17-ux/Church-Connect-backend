@@ -1,6 +1,8 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
+from sqlalchemy import JSON
+from sqlalchemy import Boolean
 from sqlalchemy import CheckConstraint
 from sqlalchemy import DateTime
 from sqlalchemy import ForeignKey
@@ -30,6 +32,12 @@ class InvitacionParticipacionModel(Base):
 
     __tablename__ = "invitaciones_participacion"
     __table_args__ = (
+        # Igual que en la base real, para que las pruebas (SQLite) fallen si
+        # el código escribe un estado que la migración no admite.
+        CheckConstraint(
+            "estado_envio IN ('en_cola', 'enviada', 'error', 'autoasignada')",
+            name="ck_invitaciones_estado_envio"
+        ),
         CheckConstraint(
             "motivo_rechazo IS NULL OR estado_respuesta = 'rechazada' "
             "OR estado_previo = 'rechazada'",
@@ -151,6 +159,35 @@ class InvitacionParticipacionModel(Base):
 
     reemplaza_invitacion_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("invitaciones_participacion.id", ondelete="SET NULL"),
+        nullable=True
+    )
+
+    # La persona estaba inscrita como público y la invitación reemplazó esa
+    # inscripción (un participante ya ocupa aforo y no se inscribe).
+    reemplazo_inscripcion: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false")
+    )
+
+    # La actividad cambió después de confirmada: vuelve a `pendiente` hasta
+    # que el responsable reconfirme. `confirmado` guarda lo que había
+    # aceptado (nombre y horario) para decirle siempre qué cambió.
+    reconfirmacion: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false")
+    )
+
+    confirmado: Mapped[dict | None] = mapped_column(
+        JSON,
+        nullable=True
+    )
+
+    # Aviso en la aplicación sobre el cambio: se reescribe, no se apila.
+    aviso_cambio_id: Mapped[UUID | None] = mapped_column(
         nullable=True
     )
 

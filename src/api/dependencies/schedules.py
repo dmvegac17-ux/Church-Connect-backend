@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.schedules.services import ScheduleService
 from src.infrastructure.database.session import get_db
+from src.infrastructure.email.email_service import email_service
 from src.infrastructure.repositories.event_repository import EventRepository
 from src.infrastructure.repositories.schedule_repository import ScheduleRepository
 
@@ -16,5 +17,6 @@ def get_schedule_service(
 
     return ScheduleService(
         repository,
-        event_repository
+        event_repository,
+        email_service
     )
