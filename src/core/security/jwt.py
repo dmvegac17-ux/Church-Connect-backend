@@ -8,13 +8,17 @@ from src.core.config import settings
 
 
 def create_access_token(user_id: UUID, rol: str) -> str:
-    expire = datetime.now(UTC) + timedelta(
+    ahora = datetime.now(UTC)
+    expire = ahora + timedelta(
         minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
     )
 
     payload = {
         "sub": str(user_id),
         "rol": rol,
+        # Cuándo se emitió: permite cerrar las sesiones anteriores a un
+        # restablecimiento de contraseña.
+        "iat": int(ahora.timestamp()),
         "exp": expire,
     }
 

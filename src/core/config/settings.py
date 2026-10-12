@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     # ambiente es obligatorio y no admite orígenes locales ni el comodín "*".
     CORS_ORIGINS: str = ""
 
+    # Dirección pública del frontend, para los enlaces de los correos
+    # (restablecer contraseña). Ej: "https://church-connect.vercel.app"
+    FRONTEND_URL: str = ""
+
     # SMTP: envío de correos (notificaciones, etc.). Si `MAIL_SMTP_HOST` o
     # `MAIL_SMTP_FROM` quedan vacíos, el envío se omite (ver `smtp_configured`).
     MAIL_SMTP_HOST: str = ""
@@ -83,6 +87,19 @@ class Settings(BaseSettings):
             for origin in self.CORS_ORIGINS.split(",")
             if origin.strip()
         ]
+
+    @property
+    def frontend_url(self) -> str:
+        """
+        Dirección pública del frontend, sin barra final: con ella se arman
+        los enlaces que van por correo. Sin `FRONTEND_URL`, se usa el primer
+        origen permitido por CORS (en desarrollo, `http://localhost:5173`).
+        """
+        base = self.FRONTEND_URL.strip() or (
+            self.cors_origins_list[0] if self.cors_origins_list else ""
+        )
+
+        return base.rstrip("/")
 
     @property
     def smtp_configured(self) -> bool:

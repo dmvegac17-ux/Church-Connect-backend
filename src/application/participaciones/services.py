@@ -1,3 +1,4 @@
+from time import monotonic as _reloj
 import unicodedata
 from collections.abc import Callable
 from datetime import UTC
@@ -12,9 +13,11 @@ from uuid import uuid4
 
 from sqlalchemy.exc import IntegrityError
 
+from src.application.notificaciones.services import firmar_mensaje
 from src.core.constants.enums import EstadoEnvioInvitacion
 from src.core.constants.enums import EstadoRespuestaInvitacion
-from src.core.constants.enums import UserRole
+from src.core.exceptions.custom_exceptions import EventoFinalizadoError
+from src.core.exceptions.custom_exceptions import evento_finalizado
 from src.core.logging.logger import logger
 from src.infrastructure.database.models.event_model import EventModel
 from src.infrastructure.database.models.invitacion_participacion_model import (
@@ -36,6 +39,9 @@ from src.infrastructure.repositories.invitacion_participacion_repository import 
 BOGOTA = timezone(timedelta(hours=-5), "America/Bogota")
 
 DIAS_PARA_CONFIRMAR_MAXIMO = 30
+# Cada cuánto, como mucho, un listado dispara el vencimiento de invitaciones.
+VENCER_EN_LECTURAS_CADA_S = 60.0
+_ultimo_vencimiento = float("-inf")
 ELEGIBLES_LIMITE = 100
 
 PENDIENTE = EstadoRespuestaInvitacion.PENDIENTE.value
@@ -49,6 +55,7 @@ REVOCADA = EstadoRespuestaInvitacion.REVOCADA.value
 ENVIO_ERROR = EstadoEnvioInvitacion.ERROR.value
 ENVIO_ENVIADA = EstadoEnvioInvitacion.ENVIADA.value
 ENVIO_EN_COLA = EstadoEnvioInvitacion.EN_COLA.value
+ENVIO_AUTOASIGNADA = EstadoEnvioInvitacion.AUTOASIGNADA.value
 
 VISTAS_PARTICIPANTE = ("pendientes", "respondidas", "todas")
 FILTROS_ADMIN = ("todas", "pendientes", "aceptadas", "por_reasignar", "error_envio")
@@ -144,6 +151,11 @@ def _hora(valor: datetime) -> str:
     return f"{local.hour % 12 or 12}:{local.minute:02d} {sufijo}"
 
 
+def _por_reconfirmar(invitacion: InvitacionParticipacionModel) -> bool:
+    """Estaba confirmada, la actividad cambió y falta que vuelva a responder."""
+    return bool(invitacion.reconfirmacion) and invitacion.estado_respuesta == PENDIENTE
+
+
 def _estado_para_participante(invitacion: InvitacionParticipacionModel) -> str:
     """
     El participante ve su propio desenlace: una invitación ya reasignada sigue
@@ -193,6 +205,21 @@ class ParticipacionService:
         dia = self._hoy() + timedelta(days=dias)
 
         return datetime.combine(dia, time(23, 59, 59), BOGOTA).astimezone(UTC)
+
+    async def vencer_en_lectura(self) -> None:
+        """
+        En los listados basta con vencer de vez en cuando: se consultan cada
+        pocos segundos y no hace falta una escritura en cada lectura. Las
+        acciones (responder, invitar, cancelar…) sí vencen siempre antes.
+        """
+        global _ultimo_vencimiento
+
+        ahora = _reloj()
+        if ahora - _ultimo_vencimiento < VENCER_EN_LECTURAS_CADA_S:
+            return
+
+        _ultimo_vencimiento = ahora
+        await self.vencer_pendientes()
 
     async def vencer_pendientes(self) -> int:
         """
@@ -247,6 +274,16 @@ class ParticipacionService:
             "fecha_respuesta": _utc(invitacion.fecha_respuesta),
             "fecha_revocacion": _utc(invitacion.fecha_revocacion),
             "motivo_rechazo": invitacion.motivo_rechazo,
+            # Se asignó a sí mismo: nadie lo invitó ni tiene plazo de respuesta.
+            "autoasignada": invitacion.estado_envio == ENVIO_AUTOASIGNADA,
+            # La actividad cambió después de que la confirmó: `cambio.antes`
+            # es lo que había aceptado; lo nuevo es la actividad tal como está.
+            "por_reconfirmar": _por_reconfirmar(invitacion),
+            "cambio": (
+                {"antes": invitacion.confirmado}
+                if _por_reconfirmar(invitacion) and invitacion.confirmado
+                else None
+            ),
             "evento": {"id": evento.id, "nombre": evento.titulo},
             "actividad": self._actividad_dto(actividad, evento),
             "responsable": responsables.get(invitacion.invitada_por),
@@ -270,6 +307,10 @@ class ParticipacionService:
         elif estado == ACEPTADA and con_plazo:
             acciones.append("revocar_y_cambiar")
 
+        # Confirmó en la aplicación, pero el correo nunca le llegó.
+        if estado == ACEPTADA and invitacion.estado_envio == ENVIO_ERROR:
+            acciones.insert(0, "reenviar")
+
         datos_actividad = self._actividad_dto(actividad, evento)
         datos_actividad.pop("lugar")
         datos_actividad.pop("descripcion")
@@ -287,6 +328,7 @@ class ParticipacionService:
             "intentos_envio": invitacion.intentos_envio,
             "ultimo_error_envio": invitacion.ultimo_error_envio,
             "estado_respuesta": estado,
+            "por_reconfirmar": _por_reconfirmar(invitacion),
             "estado_previo": invitacion.estado_previo,
             "fecha_respuesta": _utc(invitacion.fecha_respuesta),
             "fecha_limite_respuesta": _utc(invitacion.fecha_limite_respuesta),
@@ -322,7 +364,7 @@ class ParticipacionService:
     # ── Participante ────────────────────────────────────────────────────
 
     async def listar_propias(self, usuario: UserModel, vista: str) -> dict:
-        await self.vencer_pendientes()
+        await self.vencer_en_lectura()
 
         filas = await self.repository.listar_de_participante(usuario.id)
         responsables = await self._responsables(filas)
@@ -372,6 +414,9 @@ class ParticipacionService:
                 "estado_respuesta": nuevo_estado,
                 "fecha_respuesta": ahora,
                 "motivo_rechazo": motivo if nuevo_estado == RECHAZADA else None,
+                # Si era una reconfirmación, con la respuesta queda resuelta.
+                "reconfirmacion": False,
+                "confirmado": None,
                 "updated_at": ahora,
             }
         )
@@ -487,6 +532,7 @@ class ParticipacionService:
                 "nombre_completo": _nombre_completo(participante),
             },
             "motivo_liberacion": _MOTIVOS_LIBERACION[estado],
+            "autoasignada": invitacion.estado_envio == ENVIO_AUTOASIGNADA,
             "motivo_rechazo": invitacion.motivo_rechazo,
             "dias_hasta_evento": self._dias_hasta(actividad),
             "dias_para_confirmar_max": self._dias_max(actividad),
@@ -498,7 +544,7 @@ class ParticipacionService:
         if not encontrada:
             raise ActividadNoEncontradaError("Actividad no encontrada")
 
-        actividad, _ = encontrada
+        actividad, evento = encontrada
 
         vigentes = await self.repository.ultimas_por_actividad([actividad_id])
         asignado_id = vigentes[-1][0].participante_id if vigentes else None
@@ -513,6 +559,9 @@ class ParticipacionService:
             actividad.hora_fin
         )
 
+        inscritos = await self.repository.inscritos_en_evento(evento.id)
+        participantes = await self.repository.participantes_de_evento(evento.id)
+
         return [
             {
                 "id": usuario.id,
@@ -520,6 +569,10 @@ class ParticipacionService:
                 "correo": usuario.correo,
                 "rol": usuario.rol,
                 "cruce_horario": usuario.id in con_cruce,
+                # Para avisar antes de asignar: su inscripción se reemplaza, o
+                # el evento gana un ocupante más.
+                "inscrito": usuario.id in inscritos,
+                "participa": usuario.id in participantes,
             }
             for usuario in usuarios
             if usuario.id != asignado_id
@@ -527,7 +580,18 @@ class ParticipacionService:
 
     # ── Administrador: validaciones ─────────────────────────────────────
 
-    def _validar_plazo(self, actividad: ScheduleModel, dias: int) -> None:
+    def _exigir_evento_abierto(self, evento: EventModel) -> None:
+        """
+        En un evento terminado ya no se asigna a nadie. El plazo de
+        confirmación lo impide para los demás, pero quien se asigna a sí
+        mismo no tiene plazo: sin esta regla podría hacerlo.
+        """
+        if evento_finalizado(evento.fecha_fin, self._ahora()):
+            raise EventoFinalizadoError(
+                "El evento ya finalizó: no se pueden asignar participantes."
+            )
+
+    def _validar_plazo(self, actividad: ScheduleModel, dias: int | None) -> None:
         dias_hasta = self._dias_hasta(actividad)
         maximo = self._dias_max(actividad)
 
@@ -536,6 +600,8 @@ class ParticipacionService:
                 "El evento es mañana o ya pasó: no queda tiempo para pedir "
                 "confirmación."
             )
+        elif dias is None:
+            mensaje = "Indica los días para confirmar."
         elif dias < 1 or dias > DIAS_PARA_CONFIRMAR_MAXIMO:
             mensaje = (
                 f"El plazo debe estar entre 1 y {DIAS_PARA_CONFIRMAR_MAXIMO} días."
@@ -563,11 +629,6 @@ class ParticipacionService:
                 "El participante no existe o está inactivo."
             )
 
-        if usuario.rol == UserRole.ADMIN:
-            raise ParticipanteInvalidoError(
-                "Los administradores no reciben invitaciones de participación."
-            )
-
         if asignado_actual_id is not None and usuario.id == asignado_actual_id:
             raise ParticipanteInvalidoError(
                 "Elige a una persona distinta de la asignada actualmente."
@@ -577,50 +638,66 @@ class ParticipacionService:
 
     # ── Administrador: creación y envío ─────────────────────────────────
 
-    def _nueva_invitacion(
+    async def _nueva_invitacion(
         self,
         actividad: ScheduleModel,
         evento: EventModel,
         participante: UserModel,
-        dias: int,
+        dias: int | None,
         admin: UserModel,
         reemplaza_id: UUID | None
     ) -> InvitacionParticipacionModel:
-        """Agrega la invitación a la transacción en curso (sin confirmar)."""
-        ahora = self._ahora()
-        fecha_limite = self._fecha_limite(dias)
+        """
+        Agrega la invitación a la transacción en curso (sin confirmar).
 
-        # Invitar a un miembro lo convierte en participante: gana solo la
-        # confirmación de sus propias invitaciones, ningún permiso administrativo.
-        if participante.rol == UserRole.MEMBER:
-            participante.rol = UserRole.PARTICIPANT
+        Si el administrador se asigna a sí mismo nace aceptada: no hay correo,
+        plazo ni respuesta que esperar.
+        """
+        ahora = self._ahora()
+        propia = participante.id == admin.id
+        fecha_limite = None if propia else self._fecha_limite(dias)
+
+        # Un participante ya ocupa aforo: si estaba inscrito como público, la
+        # inscripción se reemplaza por la participación. El bloqueo del evento
+        # ordena este cambio con las inscripciones simultáneas.
+        await self.repository.bloquear_evento(evento.id)
+        reemplazo = await self.repository.eliminar_inscripcion(
+            participante.id,
+            evento.id
+        )
 
         invitacion = InvitacionParticipacionModel(
             id=uuid4(),
             actividad_id=actividad.id,
             participante_id=participante.id,
-            estado_respuesta=PENDIENTE,
-            estado_envio=ENVIO_EN_COLA,
+            estado_respuesta=ACEPTADA if propia else PENDIENTE,
+            estado_envio=ENVIO_AUTOASIGNADA if propia else ENVIO_EN_COLA,
             intentos_envio=0,
             fecha_limite_respuesta=fecha_limite,
+            fecha_respuesta=ahora if propia else None,
             invitada_por=admin.id,
             reemplaza_invitacion_id=reemplaza_id,
+            reemplazo_inscripcion=reemplazo,
             created_at=ahora,
             updated_at=ahora
         )
         self.repository.add(invitacion)
 
-        # La invitación queda visible en la app aunque el correo falle.
-        self.repository.add(
-            NotificacionesModel(
-                id=uuid4(),
-                usuario_id=participante.id,
-                titulo=f"Invitación a participar: {actividad.actividad}",
-                mensaje=self._mensaje_invitacion(actividad, evento, fecha_limite),
-                leida=False,
-                fecha_envio=ahora
+        if not propia:
+            # La invitación queda visible en la app aunque el correo falle.
+            self.repository.add(
+                NotificacionesModel(
+                    id=uuid4(),
+                    usuario_id=participante.id,
+                    titulo=f"Invitación a participar: {actividad.actividad}",
+                    mensaje=firmar_mensaje(
+                        self._mensaje_invitacion(actividad, evento, fecha_limite),
+                        admin
+                    ),
+                    leida=False,
+                    fecha_envio=ahora
+                )
             )
-        )
 
         return invitacion
 
@@ -637,8 +714,30 @@ class ParticipacionService:
             f"{_hora(actividad.hora_inicio)} a {_hora(actividad.hora_fin)} en "
             f"{escape(evento.lugar)}.</div><div><br></div>"
             f"<div>Responde antes del {_fecha_larga(_fecha_bogota(fecha_limite))} "
-            f"desde «Confirmar participaciones» en Church Connect.</div>"
+            f"desde <b>«Mis participaciones»</b> en Church Connect.</div>"
         )
+
+    @staticmethod
+    def _mensaje_confirmada(actividad: ScheduleModel, evento: EventModel) -> str:
+        return (
+            f"<div>Participas en <b>{escape(actividad.actividad)}</b> del evento "
+            f"<b>{escape(evento.titulo)}</b>, el "
+            f"{_fecha_larga(_fecha_bogota(actividad.hora_inicio))} de "
+            f"{_hora(actividad.hora_inicio)} a {_hora(actividad.hora_fin)} en "
+            f"{escape(evento.lugar)}.</div><div><br></div>"
+            f"<div>Ya confirmaste tu participación desde la aplicación: no "
+            f"necesitas hacer nada más. Puedes verla en <b>«Mis "
+            f"participaciones»</b> en Church Connect.</div>"
+        )
+
+    async def _firmado(self, mensaje: str, autor_id: UUID | None) -> str:
+        """Firma el aviso con el administrador que lo originó, si se conoce."""
+        if autor_id is None:
+            return mensaje
+
+        autor = (await self.repository.usuarios_por_id([autor_id])).get(autor_id)
+
+        return firmar_mensaje(mensaje, autor) if autor else mensaje
 
     async def _confirmar_creacion(self, estado_actual: str) -> None:
         """
@@ -665,15 +764,29 @@ class ParticipacionService:
             await self.repository.get_detalle(invitacion_id)
         )
 
+        # Si ya la confirmó en la aplicación, el correo no le pide responder:
+        # le deja constancia de en qué participa.
+        confirmada = invitacion.estado_respuesta == ACEPTADA
+        mensaje = await self._firmado(
+            self._mensaje_confirmada(actividad, evento)
+            if confirmada
+            else self._mensaje_invitacion(
+                actividad,
+                evento,
+                invitacion.fecha_limite_respuesta
+            ),
+            invitacion.invitada_por
+        )
+
         try:
             enviado = await self.email_service.send_notification(
                 to=participante.correo,
-                titulo=f"Invitación a participar: {actividad.actividad}",
-                mensaje=self._mensaje_invitacion(
-                    actividad,
-                    evento,
-                    invitacion.fecha_limite_respuesta
+                titulo=(
+                    f"Tu participación confirmada: {actividad.actividad}"
+                    if confirmada
+                    else f"Invitación a participar: {actividad.actividad}"
                 ),
+                mensaje=mensaje,
                 usuario_nombre=participante.nombre
             )
         except Exception:
@@ -706,11 +819,16 @@ class ParticipacionService:
             await self.repository.get_detalle(invitacion_id)
         )
 
+        mensaje = await self._firmado(
+            self._mensaje_revocacion(actividad, evento),
+            invitacion.revocada_por
+        )
+
         try:
             enviado = await self.email_service.send_notification(
                 to=participante.correo,
                 titulo=f"Ya no estás asignado a: {actividad.actividad}",
-                mensaje=self._mensaje_revocacion(actividad, evento),
+                mensaje=mensaje,
                 usuario_nombre=participante.nombre
             )
         except Exception:
@@ -745,7 +863,7 @@ class ParticipacionService:
         admin: UserModel,
         actividad_id: UUID,
         participante_id: UUID,
-        dias: int
+        dias: int | None
     ) -> dict:
         await self.vencer_pendientes()
 
@@ -755,6 +873,7 @@ class ParticipacionService:
             raise ActividadNoEncontradaError("Actividad no encontrada")
 
         actividad, evento = encontrada
+        self._exigir_evento_abierto(evento)
 
         activa = await self.repository.get_activa_de_actividad(actividad_id)
         if activa:
@@ -766,7 +885,9 @@ class ParticipacionService:
 
         # Aquí sí se puede volver a invitar a la misma persona con plazo nuevo.
         participante = await self._validar_participante(participante_id, None)
-        self._validar_plazo(actividad, dias)
+        propia = participante.id == admin.id
+        if not propia:
+            self._validar_plazo(actividad, dias)
 
         try:
             ahora = self._ahora()
@@ -783,7 +904,7 @@ class ParticipacionService:
                     }
                 )
 
-            nueva = self._nueva_invitacion(
+            nueva = await self._nueva_invitacion(
                 actividad,
                 evento,
                 participante,
@@ -801,7 +922,8 @@ class ParticipacionService:
             raise
 
         await self._confirmar_creacion(PENDIENTE)
-        await self._enviar_invitacion(nueva.id)
+        if not propia:
+            await self._enviar_invitacion(nueva.id)
 
         return await self._fila_admin_por_id(nueva.id)
 
@@ -848,7 +970,9 @@ class ParticipacionService:
         if not invitacion:
             raise InvitacionNoEncontradaError("Invitación no encontrada")
 
-        if invitacion.estado_respuesta != PENDIENTE:
+        # También si ya la confirmó desde la aplicación: el correo que falló
+        # sigue debiéndosele.
+        if invitacion.estado_respuesta not in (PENDIENTE, ACEPTADA):
             raise EstadoInvitacionError(invitacion.estado_respuesta)
 
         if invitacion.estado_envio != ENVIO_ERROR:
@@ -867,7 +991,7 @@ class ParticipacionService:
         admin: UserModel,
         invitacion_id: UUID,
         participante_id: UUID,
-        dias: int,
+        dias: int | None,
         revocar: bool
     ) -> dict:
         """
@@ -882,6 +1006,7 @@ class ParticipacionService:
             raise InvitacionNoEncontradaError("Invitación no encontrada")
 
         invitacion, actividad, evento, _ = fila
+        self._exigir_evento_abierto(evento)
         estado = invitacion.estado_respuesta
         desde = (ACEPTADA,) if revocar else ESTADOS_LIBERADOS
 
@@ -895,7 +1020,12 @@ class ParticipacionService:
             participante_id,
             invitacion.participante_id
         )
-        self._validar_plazo(actividad, dias)
+        propia = participante.id == admin.id
+        # Quien deja su propia actividad ya lo sabe: no se le notifica.
+        avisar_revocacion = revocar and invitacion.participante_id != admin.id
+
+        if not propia:
+            self._validar_plazo(actividad, dias)
 
         ahora = self._ahora()
         valores = (
@@ -926,7 +1056,7 @@ class ParticipacionService:
 
                 raise EstadoInvitacionError(actual.estado_respuesta)
 
-            nueva = self._nueva_invitacion(
+            nueva = await self._nueva_invitacion(
                 actividad,
                 evento,
                 participante,
@@ -940,13 +1070,16 @@ class ParticipacionService:
                 _nombre_completo(participante)
             )
 
-            if revocar:
+            if avisar_revocacion:
                 self.repository.add(
                     NotificacionesModel(
                         id=uuid4(),
                         usuario_id=invitacion.participante_id,
                         titulo=f"Ya no estás asignado a: {actividad.actividad}",
-                        mensaje=self._mensaje_revocacion(actividad, evento),
+                        mensaje=firmar_mensaje(
+                            self._mensaje_revocacion(actividad, evento),
+                            admin
+                        ),
                         leida=False,
                         fecha_envio=ahora
                     )
@@ -960,8 +1093,9 @@ class ParticipacionService:
 
         await self._confirmar_creacion(REASIGNADA if not revocar else REVOCADA)
 
-        await self._enviar_invitacion(nueva.id)
-        if revocar:
+        if not propia:
+            await self._enviar_invitacion(nueva.id)
+        if avisar_revocacion:
             await self._notificar_revocacion(invitacion_id)
 
         return {
@@ -974,7 +1108,7 @@ class ParticipacionService:
         admin: UserModel,
         invitacion_id: UUID,
         participante_id: UUID,
-        dias: int
+        dias: int | None
     ) -> dict:
         return await self._reemplazar(
             admin, invitacion_id, participante_id, dias, revocar=False
@@ -985,7 +1119,7 @@ class ParticipacionService:
         admin: UserModel,
         invitacion_id: UUID,
         participante_id: UUID,
-        dias: int
+        dias: int | None
     ) -> dict:
         return await self._reemplazar(
             admin, invitacion_id, participante_id, dias, revocar=True

@@ -46,6 +46,10 @@ from src.infrastructure.database.models.user_model import UserModel  # noqa: E40
 from src.infrastructure.database.session import AsyncSessionLocal  # noqa: E402
 from src.infrastructure.database.session import engine  # noqa: E402
 from src.main import app  # noqa: E402
+from src.application.participaciones import services as _participaciones  # noqa: E402
+
+# En pruebas el vencimiento se aplica en cada lectura, sin esperar el minuto.
+_participaciones.VENCER_EN_LECTURAS_CADA_S = 0
 
 assert engine.url.get_backend_name() == "sqlite", "Las pruebas solo corren sobre SQLite"
 
@@ -76,6 +80,17 @@ class FakeEmailService:
             return False
 
         self.enviados.append({"to": to, "titulo": titulo, "mensaje": mensaje})
+
+        return True
+
+    async def send_password_reset(self, to, usuario_nombre, enlace, minutos):
+        if self.fallar:
+            return False
+
+        self.enviados.append(
+            {"to": to, "titulo": "Restablece tu contraseña", "enlace": enlace,
+             "minutos": minutos, "usuario_nombre": usuario_nombre}
+        )
 
         return True
 
@@ -122,7 +137,7 @@ def auth(usuario: UserModel) -> dict[str, str]:
 
 async def crear_usuario(
     nombre: str,
-    rol: UserRole = UserRole.PARTICIPANT,
+    rol: UserRole = UserRole.MEMBER,
     activo: bool = True
 ) -> UserModel:
     async with AsyncSessionLocal() as db:
@@ -142,7 +157,11 @@ async def crear_usuario(
         return usuario
 
 
-async def crear_evento(titulo: str = "Culto de prueba", en_dias: int = 10) -> EventModel:
+async def crear_evento(
+    titulo: str = "Culto de prueba",
+    en_dias: int = 10,
+    capacidad: int = 50
+) -> EventModel:
     # A las 10:00 de Bogotá, `en_dias` días calendario después de hoy (Bogotá).
     dia = datetime.now(UTC).astimezone(BOGOTA).date() + timedelta(days=en_dias)
     inicio = datetime.combine(dia, time(10, 0), BOGOTA).astimezone(UTC)
@@ -155,7 +174,7 @@ async def crear_evento(titulo: str = "Culto de prueba", en_dias: int = 10) -> Ev
             fecha_inicio=inicio,
             fecha_fin=inicio + timedelta(hours=4),
             lugar="Templo de prueba",
-            capacidad=50,
+            capacidad=capacidad,
             creado_por="tests"
         )
         db.add(evento)

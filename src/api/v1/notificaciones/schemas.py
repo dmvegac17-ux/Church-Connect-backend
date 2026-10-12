@@ -47,3 +47,18 @@ class NotificationResponse(BaseModel):
 class NotificationListResponse(BaseModel):
     total: int
     items: list[NotificationResponse]
+
+
+class NotificationMarkRequest(BaseModel):
+    """Varias notificaciones propias que cambian de estado a la vez."""
+
+    ids: list[UUID] = Field(default_factory=list)
+    leida: bool = True
+
+
+class NotificationMarkResponse(BaseModel):
+    actualizadas: int
+
+
+class UnreadCountResponse(BaseModel):
+    total: int

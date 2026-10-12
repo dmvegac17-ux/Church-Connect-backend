@@ -37,6 +37,9 @@ class UserUpdate(BaseModel):
     apellido: PersonName | None = None
     correo: Email | None = None
     contrasena: str | None = Field(None, min_length=8, max_length=20)
+    # Obligatoria para cambiar la propia contraseña: prueba que quien lo pide
+    # es el dueño de la cuenta y no alguien con la sesión abierta.
+    contrasena_actual: str | None = Field(None, max_length=128)
     telefono: Phone | None = None
     rol: UserRole | None = None
     activo: bool | None = None
