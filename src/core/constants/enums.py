@@ -3,7 +3,6 @@ from enum import Enum
 
 class UserRole(str, Enum):
     ADMIN = "ADMIN"
-    PARTICIPANT = "PARTICIPANT"
     MEMBER = "MEMBER"
 
 
@@ -27,3 +26,5 @@ class EstadoEnvioInvitacion(str, Enum):
     EN_COLA = "en_cola"
     ENVIADA = "enviada"
     ERROR = "error"
+    # El administrador se asignó a sí mismo: no hay correo que enviar.
+    AUTOASIGNADA = "autoasignada"

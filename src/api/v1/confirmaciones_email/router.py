@@ -54,7 +54,6 @@ async def get_confirmaciones(
     current_user: UserModel = Depends(
         require_roles(
             UserRole.ADMIN,
-            UserRole.PARTICIPANT,
             UserRole.MEMBER
         )
     )
@@ -104,7 +103,6 @@ async def get_confirmacion(
     current_user: UserModel = Depends(
         require_roles(
             UserRole.ADMIN,
-            UserRole.PARTICIPANT,
             UserRole.MEMBER
         )
     )
@@ -158,7 +156,6 @@ async def create_confirmacion(
     current_user: UserModel = Depends(
         require_roles(
             UserRole.ADMIN,
-            UserRole.PARTICIPANT,
             UserRole.MEMBER
         )
     )
@@ -208,7 +205,6 @@ async def update_confirmacion(
     current_user: UserModel = Depends(
         require_roles(
             UserRole.ADMIN,
-            UserRole.PARTICIPANT,
             UserRole.MEMBER
         )
     )
@@ -260,7 +256,6 @@ async def delete_confirmacion(
     current_user: UserModel = Depends(
         require_roles(
             UserRole.ADMIN,
-            UserRole.PARTICIPANT,
             UserRole.MEMBER
         )
     )

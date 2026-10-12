@@ -20,6 +20,10 @@ from src.infrastructure.database.models.notificaciones_model import Notificacion
 from src.infrastructure.database.models.archivos_model import ArchivosModel
 from src.infrastructure.database.models.user_ministry_model import UserMinistryModel
 from src.infrastructure.database.models.invitacion_participacion_model import InvitacionParticipacionModel
+from src.infrastructure.database.models.perfil_model import PerfilModel
+from src.infrastructure.database.models.documento_legal_model import DocumentoLegalModel
+from src.infrastructure.database.models.cambio_cronograma_model import CambioCronogramaModel
+from src.infrastructure.database.models.restablecimiento_contrasena_model import RestablecimientoContrasenaModel
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)

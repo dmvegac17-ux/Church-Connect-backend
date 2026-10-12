@@ -70,7 +70,7 @@ async def listar_admin(api, admin, **params):
 
 @pytest.fixture
 async def escena(api):
-    """Un admin, dos participantes, un miembro y un evento con dos actividades."""
+    """Un admin, tres miembros y un evento con dos actividades."""
     admin = await crear_usuario("Admin", UserRole.ADMIN)
     ana = await crear_usuario("Ana")
     beto = await crear_usuario("Beto")
@@ -87,29 +87,28 @@ async def escena(api):
 
 # ── Permisos ────────────────────────────────────────────────────────────
 
-async def test_participante_hereda_los_permisos_del_miembro():
-    assert ROLE_PERMISSIONS[UserRole.MEMBER] <= ROLE_PERMISSIONS[UserRole.PARTICIPANT]
+async def test_solo_hay_dos_roles_y_el_admin_hereda_los_permisos_del_miembro():
+    assert {rol.value for rol in UserRole} == {"ADMIN", "MEMBER"}
+    assert ROLE_PERMISSIONS[UserRole.MEMBER] < ROLE_PERMISSIONS[UserRole.ADMIN]
 
 
-async def test_participante_conserva_el_acceso_del_miembro(api, escena):
-    for ruta in ("/events", "/schedules", "/ministries", "/notificaciones"):
-        como_miembro = await api.get(ruta, headers=auth(escena["miembro"]))
-        como_participante = await api.get(ruta, headers=auth(escena["ana"]))
-
-        assert como_miembro.status_code == 200, ruta
-        assert como_participante.status_code == 200, ruta
-
-
-async def test_miembro_sin_rol_participante_recibe_403(api, escena):
+async def test_miembro_sin_invitaciones_ve_una_lista_vacia(api, escena):
     cabeceras = auth(escena["miembro"])
 
-    assert (await api.get("/participante/invitaciones", headers=cabeceras)).status_code == 403
+    r = await api.get("/participante/invitaciones", headers=cabeceras)
+    assert r.status_code == 200
+    assert r.json()["data"] == {
+        "conteos": {"pendientes": 0, "respondidas": 0, "todas": 0},
+        "items": [],
+    }
+
+    # Sin invitación propia no hay nada que responder.
     assert (
         await api.post(f"/participante/invitaciones/{uuid4()}/aceptar", headers=cabeceras)
-    ).status_code == 403
+    ).status_code == 404
 
 
-async def test_participante_recibe_403_en_admin(api, escena):
+async def test_miembro_recibe_403_en_admin(api, escena):
     cabeceras = auth(escena["ana"])
     cuerpo = {"participante_id": str(escena["beto"].id), "dias_para_confirmar": 3}
 
@@ -129,10 +128,17 @@ async def test_participante_recibe_403_en_admin(api, escena):
         assert r.status_code == 403, accion
 
 
-async def test_administrador_no_responde_invitaciones(api, escena):
-    r = await api.get("/participante/invitaciones", headers=auth(escena["admin"]))
+async def test_rol_participante_ya_no_es_valido(api, escena):
+    r = await api.post(
+        "/users",
+        headers=auth(escena["admin"]),
+        json={
+            "nombre": "Rita", "apellido": "Prueba", "correo": "rita@example.com",
+            "contrasena": "clave-segura", "rol": "PARTICIPANT",
+        }
+    )
 
-    assert r.status_code == 403
+    assert r.status_code == 422
 
 
 # ── Participante ────────────────────────────────────────────────────────
@@ -267,23 +273,192 @@ async def test_un_participante_puede_estar_en_varias_actividades(api, escena):
     assert data["conteos"]["pendientes"] == 2
 
 
-async def test_invitar_a_un_miembro_le_da_el_rol_participante(api, escena):
+async def test_invitar_a_un_miembro_no_le_cambia_el_rol(api, escena):
     r = await invitar(api, escena["admin"], escena["alabanza"], escena["miembro"])
     assert r.status_code == 201
 
-    assert (await leer(UserModel, escena["miembro"].id)).rol == UserRole.PARTICIPANT
-    assert (
+    assert (await leer(UserModel, escena["miembro"].id)).rol == UserRole.MEMBER
+    data = (
         await api.get("/participante/invitaciones", headers=auth(escena["miembro"]))
-    ).status_code == 200
+    ).json()["data"]
+    assert data["conteos"]["pendientes"] == 1
 
 
-async def test_no_se_invita_a_administradores_ni_inactivos(api, escena):
+async def test_no_se_invita_a_inactivos(api, escena):
     inactivo = await crear_usuario("Ines", activo=False)
 
-    for usuario in (escena["admin"], inactivo):
-        r = await invitar(api, escena["admin"], escena["alabanza"], usuario)
-        assert r.status_code == 422
-        assert r.json()["data"]["campo"] == "participante_id"
+    r = await invitar(api, escena["admin"], escena["alabanza"], inactivo)
+    assert r.status_code == 422
+    assert r.json()["data"]["campo"] == "participante_id"
+
+
+# ── El administrador como participante ──────────────────────────────────
+
+async def test_un_administrador_invitado_por_otro_responde_como_cualquiera(api, escena, correo):
+    otro_admin = await crear_usuario("Pastor", UserRole.ADMIN)
+
+    inv = (await invitar(api, escena["admin"], escena["alabanza"], otro_admin)).json()["data"]
+    assert inv["estado_respuesta"] == "pendiente"
+    assert inv["estado_envio"] == "enviada"
+    assert len(correo.enviados) == 1
+
+    # Por las rutas de participante solo ve las suyas, aunque sea administrador.
+    await invitar(api, escena["admin"], escena["estudio"], escena["ana"])
+    propias = (
+        await api.get("/participante/invitaciones", headers=auth(otro_admin))
+    ).json()["data"]
+    assert [i["id"] for i in propias["items"]] == [inv["id"]]
+    assert propias["items"][0]["autoasignada"] is False
+    assert propias["items"][0]["responsable"]["nombre"] == "Admin Prueba"
+
+    r = await api.post(
+        f"/participante/invitaciones/{inv['id']}/aceptar", headers=auth(otro_admin)
+    )
+    assert r.status_code == 200
+    assert r.json()["data"]["estado_respuesta"] == "aceptada"
+
+
+async def test_un_administrador_no_responde_la_invitacion_de_otro(api, escena):
+    inv = (await invitar(api, escena["admin"], escena["alabanza"], escena["ana"])).json()["data"]
+
+    for accion in ("aceptar", "rechazar"):
+        r = await api.post(
+            f"/participante/invitaciones/{inv['id']}/{accion}", headers=auth(escena["admin"])
+        )
+        assert r.status_code == 404
+
+    assert (await leer(Inv, inv["id"])).estado_respuesta == "pendiente"
+
+
+async def test_autoasignarse_nace_aceptada_sin_correo_ni_plazo(api, escena, correo):
+    admin = escena["admin"]
+
+    # Sin `dias_para_confirmar`: no hay nada que confirmar.
+    r = await api.post(
+        "/admin/participaciones",
+        headers=auth(admin),
+        json={"actividad_id": str(escena["alabanza"].id), "participante_id": str(admin.id)}
+    )
+    assert r.status_code == 201, r.text
+    fila = r.json()["data"]
+
+    assert fila["estado_respuesta"] == "aceptada"
+    assert fila["estado_envio"] == "autoasignada"
+    assert fila["fecha_envio"] is None
+    assert fila["fecha_respuesta"] is not None
+    assert fila["fecha_limite_respuesta"] is None
+    assert fila["acciones_permitidas"] == ["revocar_y_cambiar"]
+    assert correo.enviados == []
+
+    actividad = await leer(ScheduleModel, escena["alabanza"].id)
+    assert actividad.responsable_id == admin.id
+    assert actividad.responsable == "Admin Prueba"
+
+    # No recibe un aviso de invitación de sí mismo.
+    async with AsyncSessionLocal() as db:
+        avisos = (
+            await db.execute(
+                select(NotificacionesModel).where(NotificacionesModel.usuario_id == admin.id)
+            )
+        ).scalars().all()
+    assert avisos == []
+
+    propias = (
+        await api.get(
+            "/participante/invitaciones", headers=auth(admin), params={"vista": "respondidas"}
+        )
+    ).json()["data"]
+    assert propias["conteos"] == {"pendientes": 0, "respondidas": 1, "todas": 1}
+    assert propias["items"][0]["autoasignada"] is True
+
+
+async def test_invitar_a_otro_exige_los_dias_para_confirmar(api, escena):
+    r = await api.post(
+        "/admin/participaciones",
+        headers=auth(escena["admin"]),
+        json={
+            "actividad_id": str(escena["alabanza"].id),
+            "participante_id": str(escena["ana"].id),
+        }
+    )
+
+    assert r.status_code == 422
+    assert r.json()["data"]["campo"] == "dias_para_confirmar"
+
+
+async def test_reasignarse_y_revocar_para_asignarse(api, escena, correo):
+    admin = escena["admin"]
+
+    # Reasignar una rechazada a uno mismo.
+    rechazada = (await invitar(api, admin, escena["alabanza"], escena["ana"])).json()["data"]
+    await api.post(
+        f"/participante/invitaciones/{rechazada['id']}/rechazar", headers=auth(escena["ana"])
+    )
+    r = await api.post(
+        f"/admin/participaciones/{rechazada['id']}/reasignar",
+        headers=auth(admin),
+        json={"participante_id": str(admin.id)}
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["original"]["estado_respuesta"] == "reasignada"
+    assert r.json()["data"]["nueva"]["estado_respuesta"] == "aceptada"
+    assert r.json()["data"]["nueva"]["estado_envio"] == "autoasignada"
+
+    # Revocar la aceptación de otro para tomar la actividad.
+    aceptada = (await invitar(api, admin, escena["estudio"], escena["beto"])).json()["data"]
+    await api.post(
+        f"/participante/invitaciones/{aceptada['id']}/aceptar", headers=auth(escena["beto"])
+    )
+    r = await api.post(
+        f"/admin/participaciones/{aceptada['id']}/revocar",
+        headers=auth(admin),
+        json={"participante_id": str(admin.id)}
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["original"]["estado_respuesta"] == "revocada"
+    assert r.json()["data"]["original"]["notificacion_revocacion_estado"] == "enviada"
+    assert r.json()["data"]["nueva"]["estado_envio"] == "autoasignada"
+
+
+async def test_dejar_la_actividad_propia_no_se_notifica_a_uno_mismo(api, escena, correo):
+    admin = escena["admin"]
+    propia = (
+        await api.post(
+            "/admin/participaciones",
+            headers=auth(admin),
+            json={"actividad_id": str(escena["alabanza"].id), "participante_id": str(admin.id)}
+        )
+    ).json()["data"]
+
+    datos = (
+        await api.get(
+            f"/admin/participaciones/{propia['id']}/reasignacion", headers=auth(admin)
+        )
+    ).json()["data"]
+    assert datos["modo"] == "revocar"
+    assert datos["autoasignada"] is True
+    assert datos["asignado_actual"]["id"] == str(admin.id)
+
+    r = await api.post(
+        f"/admin/participaciones/{propia['id']}/revocar",
+        headers=auth(admin),
+        json={"participante_id": str(escena["ana"].id), "dias_para_confirmar": 3}
+    )
+    assert r.status_code == 200, r.text
+    original = r.json()["data"]["original"]
+
+    assert original["estado_respuesta"] == "revocada"
+    assert original["notificacion_revocacion_estado"] is None
+    # Solo el correo de la invitación a Ana: nada de «ya no estás asignado».
+    assert [c["to"] for c in correo.enviados] == [escena["ana"].correo]
+
+    async with AsyncSessionLocal() as db:
+        avisos = (
+            await db.execute(
+                select(NotificacionesModel).where(NotificacionesModel.usuario_id == admin.id)
+            )
+        ).scalars().all()
+    assert avisos == []
 
 
 # ── Correo ──────────────────────────────────────────────────────────────
@@ -322,6 +497,39 @@ async def test_fallo_de_correo_no_cambia_la_respuesta(api, escena, correo):
         f"/admin/participaciones/{inv['id']}/reenviar", headers=auth(escena["admin"])
     )
     assert r.status_code == 409
+
+
+async def test_el_correo_que_fallo_se_puede_reenviar_aunque_ya_haya_confirmado(
+    api, escena, correo
+):
+    admin = auth(escena["admin"])
+    correo.fallar = True
+    inv = (await invitar(api, escena["admin"], escena["alabanza"], escena["ana"])).json()["data"]
+
+    # Ana la ve en la aplicación y confirma, sin haber recibido el correo.
+    r = await api.post(
+        f"/participante/invitaciones/{inv['id']}/aceptar", headers=auth(escena["ana"])
+    )
+    assert r.status_code == 200, r.text
+
+    fila = next(
+        p for p in (await listar_admin(api, escena["admin"]))["items"] if p["id"] == inv["id"]
+    )
+    assert fila["estado_respuesta"] == "aceptada"
+    assert fila["estado_envio"] == "error"
+    assert fila["acciones_permitidas"][0] == "reenviar"
+
+    correo.fallar = False
+    r = await api.post(f"/admin/participaciones/{inv['id']}/reenviar", headers=admin)
+
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["estado_envio"] == "enviada"
+    # Sigue confirmada, y el correo ya no le pide responder.
+    assert r.json()["data"]["estado_respuesta"] == "aceptada"
+    assert "reenviar" not in r.json()["data"]["acciones_permitidas"]
+    enviado = correo.enviados[-1]
+    assert enviado["titulo"] == "Tu participación confirmada: Alabanza"
+    assert "Ya confirmaste tu participación" in enviado["mensaje"]
 
 
 # ── Supervisión del administrador ───────────────────────────────────────
@@ -720,14 +928,27 @@ async def test_actividad_de_manana_o_pasada_no_admite_cambios(api, escena, en_di
 
     cuerpo = {"participante_id": str(escena["beto"].id), "dias_para_confirmar": 1}
 
-    r = await api.post(f"/admin/participaciones/{liberada.id}/reasignar", headers=auth(admin), json=cuerpo)
-    assert r.status_code == 422
-    assert r.json()["data"]["dias_para_confirmar_max"] < 1
+    intentos = [
+        await api.post(
+            f"/admin/participaciones/{liberada.id}/reasignar", headers=auth(admin), json=cuerpo
+        ),
+        await api.post(
+            f"/admin/participaciones/{aceptada.id}/revocar", headers=auth(admin), json=cuerpo
+        ),
+        await invitar(api, admin, liberada_act, escena["beto"], dias=1),
+    ]
 
-    r = await api.post(f"/admin/participaciones/{aceptada.id}/revocar", headers=auth(admin), json=cuerpo)
-    assert r.status_code == 422
+    if en_dias < 0:
+        # El evento ya terminó: no se asigna a nadie, sea cual sea el plazo.
+        for r in intentos:
+            assert r.status_code == 409
+            assert r.json()["data"] == {"codigo": "evento_finalizado"}
+    else:
+        # Es mañana: el evento sigue abierto, pero ya no hay plazo para confirmar.
+        for r in intentos:
+            assert r.status_code == 422
+        assert intentos[0].json()["data"]["dias_para_confirmar_max"] < 1
 
-    assert (await invitar(api, admin, liberada_act, escena["beto"], dias=1)).status_code == 422
     assert (await leer(Inv, liberada.id)).estado_respuesta == "vencida"
     assert (await leer(Inv, aceptada.id)).estado_respuesta == "aceptada"
 
@@ -751,7 +972,7 @@ async def test_elegibles_excluye_al_asignado_y_marca_cruces(api, escena):
     elegibles = {e["nombre_completo"]: e for e in r.json()["data"]}
 
     assert "Ana Prueba" not in elegibles          # asignada actualmente
-    assert "Admin Prueba" not in elegibles        # los administradores no se invitan
+    assert elegibles["Admin Prueba"]["rol"] == "ADMIN"   # también puede participar
     assert elegibles["Beto Prueba"]["cruce_horario"] is True
     assert elegibles["Mila Prueba"]["cruce_horario"] is False
 

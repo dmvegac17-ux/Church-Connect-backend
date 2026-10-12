@@ -4,6 +4,7 @@ from fastapi import status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from src.core.exceptions.custom_exceptions import EventoFinalizadoError
 from src.core.logging.logger import logger
 from src.core.schemas.response import ResponsePayload
 from src.core.schemas.response import status_name
@@ -51,6 +52,19 @@ async def http_exception_handler(
         status_code=exc.status_code,
         message=str(exc.detail),
         errors=[str(exc.detail)]
+    )
+
+
+async def evento_finalizado_handler(
+    request: Request,
+    exc: EventoFinalizadoError
+) -> JSONResponse:
+    # Un solo lugar para todos los servicios que tocan un evento terminado.
+    return _build_response(
+        status_code=status.HTTP_409_CONFLICT,
+        message=str(exc),
+        errors=[str(exc)],
+        data={"codigo": exc.codigo}
     )
 
 

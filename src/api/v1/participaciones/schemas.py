@@ -16,9 +16,10 @@ class RechazoRequest(BaseModel):
 
 class ReemplazoRequest(BaseModel):
     participante_id: UUID
-    # Entero estricto: decimales, texto y vacío se rechazan con 422. El rango
-    # depende de la fecha del evento y lo valida el servicio.
-    dias_para_confirmar: StrictInt
+    # Entero estricto: decimales y texto se rechazan con 422. El rango depende
+    # de la fecha del evento y lo valida el servicio. Solo puede omitirse
+    # cuando el administrador se asigna a sí mismo: ahí no hay plazo.
+    dias_para_confirmar: StrictInt | None = None
 
 
 class InvitacionCreate(ReemplazoRequest):
@@ -68,6 +69,11 @@ class InvitacionPropia(BaseModel):
     fecha_respuesta: datetime | None = None
     fecha_revocacion: datetime | None = None
     motivo_rechazo: str | None = None
+    autoasignada: bool = False
+    # Estaba confirmada y la actividad cambió: `pendiente` hasta reconfirmar.
+    por_reconfirmar: bool = False
+    # `{"antes": {actividad, hora_inicio, hora_fin, ...}}`: lo que confirmó.
+    cambio: dict | None = None
     evento: EventoRef
     actividad: ActividadInvitacion
     responsable: ResponsableRef | None = None
@@ -101,6 +107,7 @@ class ParticipacionAdmin(BaseModel):
     intentos_envio: int
     ultimo_error_envio: str | None = None
     estado_respuesta: str
+    por_reconfirmar: bool = False
     estado_previo: str | None = None
     fecha_respuesta: datetime | None = None
     fecha_limite_respuesta: datetime | None = None
@@ -141,6 +148,7 @@ class DatosReasignacion(BaseModel):
     evento: EventoRef
     asignado_actual: PersonaRef
     motivo_liberacion: str
+    autoasignada: bool = False
     motivo_rechazo: str | None = None
     dias_hasta_evento: int
     dias_para_confirmar_max: int
@@ -152,3 +160,5 @@ class ParticipanteElegible(BaseModel):
     correo: str
     rol: UserRole
     cruce_horario: bool
+    inscrito: bool = False
+    participa: bool = False
