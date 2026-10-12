@@ -51,6 +51,14 @@ class Settings(BaseSettings):
     MAIL_SMTP_PASSWORD: str = ""
     MAIL_SMTP_FROM: str = ""
 
+    # Supabase Storage: imágenes de anuncios. La service role key solo vive
+    # en el backend (nunca en el frontend): con ella el servidor sube y borra
+    # en el bucket sin políticas de escritura para nadie más. Sin URL o sin
+    # clave, la subida de imágenes responde que no está configurada.
+    SUPABASE_URL: str = ""
+    SUPABASE_SERVICE_ROLE_KEY: str = ""
+    SUPABASE_ANNOUNCEMENTS_BUCKET: str = "Flyers"
+
     @property
     def is_development(self) -> bool:
         return self.ENVIRONMENT.strip().lower() in DEV_ENVIRONMENTS
@@ -100,6 +108,14 @@ class Settings(BaseSettings):
         )
 
         return base.rstrip("/")
+
+    @property
+    def storage_configured(self) -> bool:
+        return bool(
+            self.SUPABASE_URL.strip()
+            and self.SUPABASE_SERVICE_ROLE_KEY.strip()
+            and self.SUPABASE_ANNOUNCEMENTS_BUCKET.strip()
+        )
 
     @property
     def smtp_configured(self) -> bool:
