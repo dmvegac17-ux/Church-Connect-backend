@@ -9,12 +9,13 @@ from fastapi import status
 from src.api.dependencies.registrations import get_registration_service
 from src.api.v1.registrations.schemas import RegistrationCreate
 from src.api.v1.registrations.schemas import RegistrationResponse
-from src.application.registrations.services import DuplicateRegistrationError
-from src.application.registrations.services import EventFullError
+from src.api.v1.registrations.schemas import RegistrationUpdate
 from src.application.registrations.services import EventNotFoundError
 from src.application.registrations.services import ForbiddenRegistrationAccessError
+from src.application.registrations.services import RegistrationConflictError
 from src.application.registrations.services import RegistrationNotFoundError
 from src.application.registrations.services import RegistrationService
+from src.application.registrations.services import UserNotFoundError
 from src.core.constants.enums import UserRole
 from src.core.schemas.response import ResponsePayload
 from src.core.security.permissions import require_roles
@@ -25,6 +26,16 @@ router = APIRouter(
     prefix="/registrations",
     tags=["Registrations"]
 )
+
+
+def _conflicto(ex: RegistrationConflictError) -> HTTPException:
+    # `codigo` viaja en `data` para que el cliente distinga el motivo:
+    # sin_cupos, ya_inscrito, es_participante, inscripciones_cerradas o
+    # cancelacion_cerrada.
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={"message": str(ex), "codigo": ex.codigo}
+    )
 
 
 @router.get(
@@ -91,7 +102,6 @@ async def get_my_registrations(
     current_user: UserModel = Depends(
         require_roles(
             UserRole.ADMIN,
-            UserRole.PARTICIPANT,
             UserRole.MEMBER
         )
     )
@@ -135,7 +145,6 @@ async def get_registration(
     current_user: UserModel = Depends(
         require_roles(
             UserRole.ADMIN,
-            UserRole.PARTICIPANT,
             UserRole.MEMBER
         )
     )
@@ -170,14 +179,22 @@ async def get_registration(
     status_code=status.HTTP_201_CREATED,
     summary="Inscribirse a un evento",
     description=(
-        "Registra al usuario autenticado en un evento existente. El "
-        "`usuario_id` siempre se toma del token, nunca del cuerpo de la "
-        "solicitud. Cualquier usuario autenticado puede inscribirse."
+        "Inscribe al usuario autenticado como público de un evento. Un "
+        "`admin` puede enviar `usuario_id` para inscribir a otra persona y "
+        "una `nota`. El cupo se valida de forma atómica contra el aforo "
+        "menos los participantes. Quien participa en el evento no se "
+        "inscribe: ya ocupa su lugar."
     ),
     responses={
         401: {"description": "No autenticado"},
-        404: {"description": "Evento no encontrado"},
-        409: {"description": "Ya inscrito o evento sin cupos disponibles"},
+        403: {"description": "Solo un administrador inscribe a otra persona"},
+        404: {"description": "Evento o usuario no encontrado"},
+        409: {
+            "description": (
+                "No procede; `data.codigo` indica el motivo: `sin_cupos`, "
+                "`ya_inscrito`, `es_participante` o `inscripciones_cerradas`"
+            )
+        },
     },
 )
 async def create_registration(
@@ -188,7 +205,6 @@ async def create_registration(
     current_user: UserModel = Depends(
         require_roles(
             UserRole.ADMIN,
-            UserRole.PARTICIPANT,
             UserRole.MEMBER
         )
     )
@@ -196,25 +212,69 @@ async def create_registration(
     try:
         registration = await service.create(
             evento_id=request.evento_id,
-            user_id=current_user.id
+            current_user=current_user,
+            usuario_id=request.usuario_id,
+            nota=request.nota
         )
 
-    except EventNotFoundError as ex:
+    except (EventNotFoundError, UserNotFoundError) as ex:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(ex)
         )
 
-    except (DuplicateRegistrationError, EventFullError) as ex:
+    except ForbiddenRegistrationAccessError as ex:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=status.HTTP_403_FORBIDDEN,
             detail=str(ex)
         )
+
+    except RegistrationConflictError as ex:
+        raise _conflicto(ex)
 
     return ResponsePayload.ok(
         data=registration,
         status_code=status.HTTP_201_CREATED,
         message="Inscripción realizada exitosamente"
+    )
+
+
+@router.patch(
+    "/{registration_id}",
+    response_model=ResponsePayload[RegistrationResponse],
+    summary="Editar la nota de una inscripción",
+    description="Solo el rol `admin` puede editar la nota de una inscripción.",
+    responses={
+        401: {"description": "No autenticado"},
+        403: {"description": "No tiene permisos para realizar esta acción"},
+        404: {"description": "Inscripción no encontrada"},
+    },
+)
+async def update_registration(
+    registration_id: UUID,
+    request: RegistrationUpdate,
+    service: RegistrationService = Depends(
+        get_registration_service
+    ),
+    current_user: UserModel = Depends(
+        require_roles(UserRole.ADMIN)
+    )
+):
+    try:
+        registration = await service.update_note(
+            registration_id,
+            request.nota
+        )
+
+    except RegistrationNotFoundError as ex:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(ex)
+        )
+
+    return ResponsePayload.ok(
+        data=registration,
+        message="Inscripción actualizada exitosamente"
     )
 
 
@@ -230,6 +290,13 @@ async def create_registration(
         401: {"description": "No autenticado"},
         403: {"description": "No tiene permisos para realizar esta acción"},
         404: {"description": "Inscripción no encontrada"},
+        409: {
+            "description": (
+                "`cancelacion_cerrada`: el evento ya empezó o pasó el límite "
+                "de días para cancelar (solo aplica al dueño; un `admin` "
+                "siempre puede)"
+            )
+        },
     },
 )
 async def delete_registration(
@@ -240,7 +307,6 @@ async def delete_registration(
     current_user: UserModel = Depends(
         require_roles(
             UserRole.ADMIN,
-            UserRole.PARTICIPANT,
             UserRole.MEMBER
         )
     )
@@ -262,6 +328,9 @@ async def delete_registration(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(ex)
         )
+
+    except RegistrationConflictError as ex:
+        raise _conflicto(ex)
 
     return ResponsePayload.ok(
         data=None,

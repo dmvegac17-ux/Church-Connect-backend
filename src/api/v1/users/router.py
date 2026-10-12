@@ -14,6 +14,7 @@ from src.application.users.services import UserHasRelatedRecordsError
 from src.application.users.services import UserService
 from src.core.constants.enums import UserRole
 from src.core.schemas.response import ResponsePayload
+from src.core.security.hashing import verify_password
 from src.core.security.permissions import require_roles
 from src.core.security.permissions import require_self_or_admin
 from src.infrastructure.database.models.user_model import UserModel
@@ -138,6 +139,15 @@ async def create_user(
     )
 
 
+def _coincide(contrasena: str, hash_guardado: str) -> bool:
+    try:
+        return verify_password(contrasena, hash_guardado)
+
+    except ValueError:
+        # Hash guardado ilegible: se trata como contraseña incorrecta.
+        return False
+
+
 @router.put(
     "/{user_id}",
     response_model=ResponsePayload[UserResponse],
@@ -147,7 +157,9 @@ async def create_user(
         "actualizar cualquier usuario, incluyendo `rol`, `activo` y "
         "`contrasena`; `participant` y `member` solo pueden actualizar su "
         "propio perfil, no pueden modificar `rol` ni `activo`, y solo "
-        "pueden cambiar su propia `contrasena`."
+        "pueden cambiar su propia `contrasena`. Cambiar la propia "
+        "contraseña (cualquier rol) exige `contrasena_actual`; un `admin` "
+        "que restablece la de otro usuario no la necesita."
     ),
     responses={
         400: {"description": "Datos inválidos"},
@@ -177,6 +189,27 @@ async def update_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tiene permisos para modificar la contraseña de otro usuario"
         )
+
+    # La sesión abierta no basta para cambiar la propia contraseña: hay que
+    # demostrar que se conoce la actual. 400 y no 401, que cerraría la sesión.
+    if request.contrasena is not None and current_user.id == user_id:
+        if not request.contrasena_actual:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Escribe tu contraseña actual para cambiarla"
+            )
+
+        if not _coincide(request.contrasena_actual, current_user.contrasena):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La contraseña actual no es correcta"
+            )
+
+        if request.contrasena == request.contrasena_actual:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La nueva contraseña debe ser distinta de la actual"
+            )
 
     try:
         user = await service.update(

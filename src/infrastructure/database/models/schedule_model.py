@@ -1,7 +1,7 @@
 from uuid import UUID, uuid4
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, ForeignKey, String, DateTime, Text
+from sqlalchemy import CheckConstraint, ForeignKey, Index, String, DateTime, Text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -15,6 +15,10 @@ class ScheduleModel(Base):
             "descripcion IS NULL OR char_length(descripcion) <= 1000",
             name="ck_cronogramas_descripcion_length"
         ),
+        # El cronograma de un evento, en orden de hora.
+        Index("ix_cronogramas_evento_inicio", "evento_id", "hora_inicio"),
+        # Aforo y participaciones: quién es responsable de qué.
+        Index("ix_cronogramas_responsable", "responsable_id"),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -60,5 +64,18 @@ class ScheduleModel(Base):
 
     descripcion: Mapped[str | None] = mapped_column(
         Text,
+        nullable=True
+    )
+
+    # Borrado lógico: una actividad eliminada se conserva como cancelada,
+    # para el historial y para quien estaba asignado a ella.
+    cancelada_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
+    cancelada_por: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("usuarios.id", ondelete="SET NULL"),
         nullable=True
     )

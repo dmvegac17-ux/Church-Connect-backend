@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.registrations.services import RegistrationService
 from src.infrastructure.database.session import get_db
+from src.infrastructure.repositories.aforo_repository import AforoRepository
 from src.infrastructure.repositories.event_repository import EventRepository
 from src.infrastructure.repositories.registration_repository import RegistrationRepository
 
@@ -16,5 +17,6 @@ def get_registration_service(
 
     return RegistrationService(
         repository,
-        event_repository
+        event_repository,
+        AforoRepository(db)
     )

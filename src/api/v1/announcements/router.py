@@ -44,7 +44,6 @@ async def get_announcements(
     current_user: UserModel = Depends(
         require_roles(
             UserRole.ADMIN,
-            UserRole.PARTICIPANT,
             UserRole.MEMBER
         )
     )
@@ -84,7 +83,6 @@ async def get_announcement(
     current_user: UserModel = Depends(
         require_roles(
             UserRole.ADMIN,
-            UserRole.PARTICIPANT,
             UserRole.MEMBER
         )
     )

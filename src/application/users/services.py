@@ -49,8 +49,14 @@ class UserService:
 
     async def create(
         self,
-        request: UserCreate
+        request: UserCreate,
+        junto_con=None
     ):
+        """
+        `junto_con(usuario)` devuelve registros que deben guardarse en la
+        misma transacción que la cuenta (p. ej. la aceptación de los
+        documentos legales al registrarse).
+        """
         existing_user = await self.repository.get_by_email(
             request.correo
         )
@@ -72,7 +78,10 @@ class UserService:
             fecha_creacion=datetime.now(UTC)
         )
 
-        return await self.repository.create(user)
+        return await self.repository.create(
+            user,
+            junto_con(user) if junto_con else ()
+        )
 
     async def update(
         self,
@@ -100,7 +109,9 @@ class UserService:
                 )
 
         update_data = request.model_dump(
-            exclude_unset=True
+            exclude_unset=True,
+            # Solo sirve para autorizar el cambio: no es un dato del usuario.
+            exclude={"contrasena_actual"}
         )
 
         if "contrasena" in update_data:
