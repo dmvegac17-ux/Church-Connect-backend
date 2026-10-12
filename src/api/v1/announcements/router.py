@@ -2,19 +2,26 @@ from uuid import UUID
 
 from fastapi import APIRouter
 from fastapi import Depends
+from fastapi import File
+from fastapi import Form
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import UploadFile
 from fastapi import status
 
 from src.api.dependencies.announcements import get_announcement_service
-from src.api.v1.announcements.schemas import AnnouncementCreate
 from src.api.v1.announcements.schemas import AnnouncementResponse
-from src.api.v1.announcements.schemas import AnnouncementUpdate
+from src.application.announcements.services import IMAGEN_MAX_BYTES
 from src.application.announcements.services import AnnouncementService
+from src.application.announcements.services import AnuncioNoEncontradoError
+from src.application.announcements.services import DatosAnuncioInvalidosError
+from src.application.announcements.services import ImagenSubida
 from src.core.constants.enums import UserRole
 from src.core.schemas.response import ResponsePayload
 from src.core.security.permissions import require_roles
 from src.infrastructure.database.models.user_model import UserModel
+from src.infrastructure.supabase.client import StorageError
+from src.infrastructure.supabase.client import StorageNoConfiguradoError
 
 
 router = APIRouter(
@@ -22,14 +29,77 @@ router = APIRouter(
     tags=["Announcements"]
 )
 
+_RESPUESTAS_ESCRITURA = {
+    401: {"description": "No autenticado"},
+    403: {"description": "No tiene permisos para realizar esta acción"},
+    422: {
+        "description": (
+            "Datos inválidos: título o texto vacíos o demasiado largos, o "
+            "imagen que no es JPG, PNG o WebP o supera 5 MB"
+        )
+    },
+    502: {"description": "No se pudo subir la imagen a Storage"},
+    503: {"description": "La subida de imágenes no está configurada"},
+}
+
+
+async def _leer_imagen(imagen: UploadFile | None) -> ImagenSubida | None:
+    """
+    Lee el archivo con un tope de 5 MB + 1 byte: basta para saber si se pasa
+    del límite sin cargar en memoria un archivo enorme.
+    """
+    if imagen is None or not imagen.filename:
+        return None
+
+    contenido = await imagen.read(IMAGEN_MAX_BYTES + 1)
+
+    return ImagenSubida(contenido=contenido, nombre=imagen.filename)
+
+
+def _traducir(ex: Exception) -> HTTPException:
+    if isinstance(ex, AnuncioNoEncontradoError):
+        return HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(ex)
+        )
+
+    if isinstance(ex, DatosAnuncioInvalidosError):
+        return HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"message": str(ex), "campo": ex.campo}
+        )
+
+    if isinstance(ex, StorageNoConfiguradoError):
+        return HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(ex)
+        )
+
+    if isinstance(ex, StorageError):
+        return HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(ex)
+        )
+
+    raise ex
+
+
+_ERRORES = (
+    AnuncioNoEncontradoError,
+    DatosAnuncioInvalidosError,
+    StorageNoConfiguradoError,
+    StorageError,
+)
+
 
 @router.get(
     "",
     response_model=ResponsePayload[list[AnnouncementResponse]],
-    summary="Listar announcements",
+    summary="Listar anuncios",
     description=(
-        "Devuelve un listado paginado de announcements. "
-        "Cualquier usuario autenticado puede consultar los announcements."
+        "Listado paginado, del más reciente al más antiguo, con el nombre de "
+        "quien publicó y de quien actualizó. Cualquier usuario con sesión "
+        "puede consultarlo."
     ),
     responses={
         401: {"description": "No autenticado"},
@@ -68,7 +138,7 @@ async def get_announcements(
     summary="Obtener anuncio por ID",
     description=(
         "Devuelve el detalle de un anuncio específico. "
-        "Cualquier usuario autenticado puede consultar anuncios."
+        "Cualquier usuario con sesión puede consultar anuncios."
     ),
     responses={
         401: {"description": "No autenticado"},
@@ -92,11 +162,8 @@ async def get_announcement(
             announcement_id
         )
 
-    except ValueError as ex:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(ex)
-        )
+    except _ERRORES as ex:
+        raise _traducir(ex)
 
     return ResponsePayload.ok(
         data=announcement,
@@ -110,16 +177,16 @@ async def get_announcement(
     status_code=status.HTTP_201_CREATED,
     summary="Crear anuncio",
     description=(
-        "Registra un nuevo anuncio en la plataforma. "
-        "Solo el rol `admin` puede crear anuncios."
+        "Formulario `multipart/form-data` con `titulo`, `contenido` e "
+        "`imagen` opcional (JPG, PNG o WebP, máximo 5 MB). Quien publica es "
+        "siempre el usuario autenticado. Solo el rol `admin`."
     ),
-    responses={
-        401: {"description": "No autenticado"},
-        403: {"description": "No tiene permisos para realizar esta acción"},
-    },
+    responses=_RESPUESTAS_ESCRITURA,
 )
 async def create_announcement(
-    request: AnnouncementCreate,
+    titulo: str = Form(...),
+    contenido: str = Form(...),
+    imagen: UploadFile | None = File(None),
     service: AnnouncementService = Depends(
         get_announcement_service
     ),
@@ -129,15 +196,14 @@ async def create_announcement(
 ):
     try:
         announcement = await service.create(
-            request=request,
-            user_id=current_user.id
+            autor=current_user,
+            titulo=titulo,
+            contenido=contenido,
+            imagen=await _leer_imagen(imagen)
         )
 
-    except ValueError as ex:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(ex)
-        )
+    except _ERRORES as ex:
+        raise _traducir(ex)
 
     return ResponsePayload.ok(
         data=announcement,
@@ -151,19 +217,22 @@ async def create_announcement(
     response_model=ResponsePayload[AnnouncementResponse],
     summary="Actualizar anuncio",
     description=(
-        "Actualiza los datos de un anuncio existente. "
-        "Solo el rol `admin` puede actualizar anuncios."
+        "Formulario `multipart/form-data`; todos los campos son opcionales. "
+        "`imagen` reemplaza la actual (la anterior se borra del bucket) y "
+        "`quitar_imagen=true` la elimina. Quien actualiza es siempre el "
+        "usuario autenticado. Solo el rol `admin`."
     ),
     responses={
-        400: {"description": "Datos inválidos"},
-        401: {"description": "No autenticado"},
-        403: {"description": "No tiene permisos para realizar esta acción"},
+        **_RESPUESTAS_ESCRITURA,
         404: {"description": "Anuncio no encontrado"},
     },
 )
 async def update_announcement(
     announcement_id: UUID,
-    request: AnnouncementUpdate,
+    titulo: str | None = Form(None),
+    contenido: str | None = Form(None),
+    imagen: UploadFile | None = File(None),
+    quitar_imagen: bool = Form(False),
     service: AnnouncementService = Depends(
         get_announcement_service
     ),
@@ -174,14 +243,15 @@ async def update_announcement(
     try:
         announcement = await service.update(
             announcement_id=announcement_id,
-            request=request
+            editor=current_user,
+            titulo=titulo,
+            contenido=contenido,
+            imagen=await _leer_imagen(imagen),
+            quitar_imagen=quitar_imagen
         )
 
-    except ValueError as ex:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(ex)
-        )
+    except _ERRORES as ex:
+        raise _traducir(ex)
 
     return ResponsePayload.ok(
         data=announcement,
@@ -194,7 +264,7 @@ async def update_announcement(
     response_model=ResponsePayload[None],
     summary="Eliminar anuncio",
     description=(
-        "Elimina un anuncio existente. "
+        "Elimina el anuncio y, después, su imagen del bucket. "
         "Solo el rol `admin` puede eliminar anuncios."
     ),
     responses={
@@ -217,11 +287,8 @@ async def delete_announcement(
             announcement_id
         )
 
-    except ValueError as ex:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(ex)
-        )
+    except _ERRORES as ex:
+        raise _traducir(ex)
 
     return ResponsePayload.ok(
         data=None,
