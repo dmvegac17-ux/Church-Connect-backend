@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import DateTime
+from sqlalchemy import ForeignKey
 from sqlalchemy import String
 from sqlalchemy import Text
 from sqlalchemy.orm import Mapped
@@ -33,6 +34,7 @@ class ArchivosModel(Base):
     )
 
     subido_por: Mapped[UUID | None] = mapped_column(
+        ForeignKey("usuarios.id", ondelete="CASCADE"),
         nullable=True
     )
 

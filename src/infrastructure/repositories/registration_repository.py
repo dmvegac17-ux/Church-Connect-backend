@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.infrastructure.database.models.registration_model import RegistrationModel
+from src.infrastructure.database.models.user_model import UserModel
 
 
 class RegistrationRepository:
@@ -23,6 +24,7 @@ class RegistrationRepository:
     ):
         query = (
             select(RegistrationModel)
+            .order_by(RegistrationModel.fecha_inscripcion.desc())
             .limit(limit)
             .offset(offset)
         )
@@ -49,6 +51,7 @@ class RegistrationRepository:
         query = (
             select(RegistrationModel)
             .where(RegistrationModel.evento_id == evento_id)
+            .order_by(RegistrationModel.fecha_inscripcion.desc())
             .limit(limit)
             .offset(offset)
         )
@@ -80,6 +83,7 @@ class RegistrationRepository:
         query = (
             select(RegistrationModel)
             .where(RegistrationModel.usuario_id == usuario_id)
+            .order_by(RegistrationModel.fecha_inscripcion.desc())
             .limit(limit)
             .offset(offset)
         )
@@ -127,6 +131,32 @@ class RegistrationRepository:
         result = await self.db.execute(query)
 
         return result.scalar_one_or_none()
+
+    async def usuarios_por_id(
+        self,
+        usuario_ids: list[UUID]
+    ) -> dict[UUID, UserModel]:
+        if not usuario_ids:
+            return {}
+
+        result = await self.db.execute(
+            select(UserModel).where(UserModel.id.in_(usuario_ids))
+        )
+
+        return {usuario.id: usuario for usuario in result.scalars().all()}
+
+    async def rollback(self) -> None:
+        await self.db.rollback()
+
+    async def update(
+        self,
+        registration: RegistrationModel
+    ):
+        await self.db.commit()
+
+        await self.db.refresh(registration)
+
+        return registration
 
     async def create(
         self,

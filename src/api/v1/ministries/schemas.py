@@ -4,15 +4,19 @@ from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
 
+from src.core.schemas.fields import trimmed_text
+
+MinistryName = trimmed_text(1, 255)
+
 
 class MinistryCreate(BaseModel):
-    nombre: str = Field(..., min_length=1, max_length=255)
-    descripcion: str | None = None
+    nombre: MinistryName
+    descripcion: str | None = Field(default=None, max_length=255)
 
 
 class MinistryUpdate(BaseModel):
-    nombre: str | None = Field(None, min_length=1, max_length=255)
-    descripcion: str | None = None
+    nombre: MinistryName | None = None
+    descripcion: str | None = Field(default=None, max_length=255)
 
 
 class MinistryResponse(BaseModel):

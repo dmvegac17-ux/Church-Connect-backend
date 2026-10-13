@@ -49,7 +49,6 @@ async def get_ministries(
     current_user: UserModel = Depends(
         require_roles(
             UserRole.ADMIN,
-            UserRole.PARTICIPANT,
             UserRole.MEMBER
         )
     )
@@ -89,7 +88,6 @@ async def get_ministry(
     current_user: UserModel = Depends(
         require_roles(
             UserRole.ADMIN,
-            UserRole.PARTICIPANT,
             UserRole.MEMBER
         )
     )
@@ -253,7 +251,6 @@ async def get_ministry_members(
     current_user: UserModel = Depends(
         require_roles(
             UserRole.ADMIN,
-            UserRole.PARTICIPANT,
             UserRole.MEMBER
         )
     )

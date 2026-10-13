@@ -4,6 +4,7 @@ from fastapi import status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from src.core.exceptions.custom_exceptions import EventoFinalizadoError
 from src.core.logging.logger import logger
 from src.core.schemas.response import ResponsePayload
 from src.core.schemas.response import status_name
@@ -12,12 +13,13 @@ from src.core.schemas.response import status_name
 def _build_response(
     status_code: int,
     message: str,
-    errors: list[str] | None = None
+    errors: list[str] | None = None,
+    data: dict | None = None
 ) -> JSONResponse:
     payload = ResponsePayload(
         status_code=status_code,
         status=status_name(status_code),
-        data=None,
+        data=data,
         success=False,
         message=message,
         errors=errors
@@ -33,10 +35,36 @@ async def http_exception_handler(
     request: Request,
     exc: HTTPException
 ) -> JSONResponse:
+    # `detail` como dict: `message` va al envelope y el resto viaja en `data`
+    # (p. ej. `estado_actual` en un 409) para que el cliente pueda reaccionar.
+    if isinstance(exc.detail, dict):
+        detail = dict(exc.detail)
+        message = str(detail.pop("message", "Error"))
+
+        return _build_response(
+            status_code=exc.status_code,
+            message=message,
+            errors=[message],
+            data=detail or None
+        )
+
     return _build_response(
         status_code=exc.status_code,
         message=str(exc.detail),
         errors=[str(exc.detail)]
+    )
+
+
+async def evento_finalizado_handler(
+    request: Request,
+    exc: EventoFinalizadoError
+) -> JSONResponse:
+    # Un solo lugar para todos los servicios que tocan un evento terminado.
+    return _build_response(
+        status_code=status.HTTP_409_CONFLICT,
+        message=str(exc),
+        errors=[str(exc)],
+        data={"codigo": exc.codigo}
     )
 
 

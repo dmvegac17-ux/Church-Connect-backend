@@ -21,13 +21,25 @@ class UserNotFoundError(Exception):
     pass
 
 
-def _firmar_mensaje(
+class NotificacionAjenaError(Exception):
+    """Alguno de los ids no existe o pertenece a otra persona."""
+
+
+# Tope de notificaciones por petición al marcarlas por lotes.
+MARCAR_MAXIMO = 500
+
+
+FIRMA_CARGO = "Administrador de Church Connect"
+
+
+def firmar_mensaje(
     mensaje: str,
     remitente: UserModel
 ) -> str:
     """
-    Agrega la firma "Atte, <nombre del remitente>" al final del mensaje
-    (HTML enriquecido), como un párrafo aparte.
+    Agrega al final del mensaje (HTML enriquecido) la firma del
+    administrador que lo envía: "Atte, <nombre>" y su cargo, para que quien
+    lo recibe sepa de quién viene.
     """
     nombre_completo = remitente.nombre
 
@@ -36,6 +48,7 @@ def _firmar_mensaje(
 
     return (
         f"{mensaje}<div><br></div><div>Atte, {escape(nombre_completo)}</div>"
+        f"<div>{FIRMA_CARGO}</div>"
     )
 
 
@@ -100,7 +113,7 @@ class NotificacionesService:
                 "Usuario no encontrado"
             )
 
-        mensaje_firmado = _firmar_mensaje(
+        mensaje_firmado = firmar_mensaje(
             request.mensaje,
             remitente
         )
@@ -134,7 +147,7 @@ class NotificacionesService:
     ) -> tuple[list[NotificacionesModel], list[str]]:
         creadas: list[NotificacionesModel] = []
         errores: list[str] = []
-        mensaje_firmado = _firmar_mensaje(
+        mensaje_firmado = firmar_mensaje(
             request.mensaje,
             remitente
         )
@@ -232,3 +245,30 @@ class NotificacionesService:
         await self.repository.delete(
             notificacion
         )
+
+    # ── Por lotes ───────────────────────────────────────────────────────
+
+    async def marcar(self, usuario: UserModel, ids: list[UUID], leida: bool) -> int:
+        """
+        Marca como leídas (o no leídas) varias notificaciones propias con una
+        sola sentencia. Todo o nada: si algún id no es de quien lo pide, no
+        cambia ninguna.
+        """
+        unicos = list(dict.fromkeys(ids))
+        marcadas = await self.repository.marcar(usuario.id, unicos, leida)
+
+        if marcadas != len(unicos):
+            await self.repository.rollback()
+            raise NotificacionAjenaError(
+                "Alguna notificación no existe o no te pertenece"
+            )
+
+        await self.repository.commit()
+
+        return marcadas
+
+    async def marcar_todas_leidas(self, usuario: UserModel) -> int:
+        return await self.repository.marcar_todas_leidas(usuario.id)
+
+    async def contar_no_leidas(self, usuario: UserModel) -> int:
+        return await self.repository.contar_no_leidas(usuario.id)

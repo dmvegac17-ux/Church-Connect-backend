@@ -1,4 +1,21 @@
+from urllib.parse import urlsplit
+
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Valores de `ENVIRONMENT` que se consideran desarrollo.
+DEV_ENVIRONMENTS = {"local", "development", "dev"}
+
+# Orígenes que se usan en desarrollo cuando `CORS_ORIGINS` no está definido.
+DEV_CORS_ORIGINS = "http://localhost:5173,http://localhost:3000"
+
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
+
+
+def _is_local_origin(origin: str) -> bool:
+    # Sin esquema ("localhost:5173") urlsplit no detecta el host.
+    host = urlsplit(origin if "://" in origin else f"//{origin}").hostname or ""
+    return host in LOCAL_HOSTS or host.endswith(".localhost")
 
 
 class Settings(BaseSettings):
@@ -16,8 +33,15 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
     # CORS: orígenes permitidos para el frontend, separados por comas.
-    # Ej: "http://localhost:5173,https://church-connect.app"
-    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
+    # Ej: "https://church-connect.app,https://admin.church-connect.app"
+    # Sin valor fijo: en ambientes de desarrollo (ver `is_development`) se
+    # completa con `DEV_CORS_ORIGINS` si queda vacío; en cualquier otro
+    # ambiente es obligatorio y no admite orígenes locales ni el comodín "*".
+    CORS_ORIGINS: str = ""
+
+    # Dirección pública del frontend, para los enlaces de los correos
+    # (restablecer contraseña). Ej: "https://church-connect.vercel.app"
+    FRONTEND_URL: str = ""
 
     # SMTP: envío de correos (notificaciones, etc.). Si `MAIL_SMTP_HOST` o
     # `MAIL_SMTP_FROM` quedan vacíos, el envío se omite (ver `smtp_configured`).
@@ -27,6 +51,43 @@ class Settings(BaseSettings):
     MAIL_SMTP_PASSWORD: str = ""
     MAIL_SMTP_FROM: str = ""
 
+    # Supabase Storage: imágenes de anuncios. La service role key solo vive
+    # en el backend (nunca en el frontend): con ella el servidor sube y borra
+    # en el bucket sin políticas de escritura para nadie más. Sin URL o sin
+    # clave, la subida de imágenes responde que no está configurada.
+    SUPABASE_URL: str = ""
+    SUPABASE_SERVICE_ROLE_KEY: str = ""
+    SUPABASE_ANNOUNCEMENTS_BUCKET: str = "Flyers"
+
+    @property
+    def is_development(self) -> bool:
+        return self.ENVIRONMENT.strip().lower() in DEV_ENVIRONMENTS
+
+    @model_validator(mode="after")
+    def validate_cors_origins(self) -> "Settings":
+        if self.is_development:
+            if not self.cors_origins_list:
+                self.CORS_ORIGINS = DEV_CORS_ORIGINS
+            return self
+
+        if not self.cors_origins_list:
+            raise ValueError(
+                f"CORS_ORIGINS es obligatorio cuando ENVIRONMENT="
+                f"'{self.ENVIRONMENT}' (solo se omite en: "
+                f"{', '.join(sorted(DEV_ENVIRONMENTS))})."
+            )
+
+        forbidden = [
+            origin for origin in self.cors_origins_list
+            if origin == "*" or _is_local_origin(origin)
+        ]
+        if forbidden:
+            raise ValueError(
+                f"CORS_ORIGINS no admite orígenes locales ni '*' cuando "
+                f"ENVIRONMENT='{self.ENVIRONMENT}': {', '.join(forbidden)}"
+            )
+        return self
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [
@@ -34,6 +95,27 @@ class Settings(BaseSettings):
             for origin in self.CORS_ORIGINS.split(",")
             if origin.strip()
         ]
+
+    @property
+    def frontend_url(self) -> str:
+        """
+        Dirección pública del frontend, sin barra final: con ella se arman
+        los enlaces que van por correo. Sin `FRONTEND_URL`, se usa el primer
+        origen permitido por CORS (en desarrollo, `http://localhost:5173`).
+        """
+        base = self.FRONTEND_URL.strip() or (
+            self.cors_origins_list[0] if self.cors_origins_list else ""
+        )
+
+        return base.rstrip("/")
+
+    @property
+    def storage_configured(self) -> bool:
+        return bool(
+            self.SUPABASE_URL.strip()
+            and self.SUPABASE_SERVICE_ROLE_KEY.strip()
+            and self.SUPABASE_ANNOUNCEMENTS_BUCKET.strip()
+        )
 
     @property
     def smtp_configured(self) -> bool:

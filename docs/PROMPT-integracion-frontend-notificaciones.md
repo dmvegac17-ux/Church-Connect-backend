@@ -25,7 +25,10 @@ Dos niveles de acceso:
 - **Lectura de la propia bandeja** (listar / ver detalle): cualquier usuario autenticado
   (`ADMIN`, `PARTICIPANT`, `MEMBER`). **Nadie puede ver notificaciones de otro usuario**, ni
   siquiera `ADMIN` — no existe un endpoint de "bandeja global".
-- **Envío / edición / eliminación**: **solo `ADMIN`**.
+- **Marcar como leída la propia notificación**: cualquier usuario autenticado, solo sobre
+  notificaciones cuyo `usuario_id` sea el suyo.
+- **Envío / edición de título-mensaje / eliminación**: **solo `ADMIN`** (`ADMIN` también puede
+  marcar como leída cualquier notificación).
 
 ## 2. Configuración base de la API
 
@@ -75,13 +78,10 @@ El `httpClient` ya desempaca `data` y lanza `ApiError` (con `message` + `errors`
 | `leida` | `boolean` | default `false` al crearse |
 | `fecha_envio` | `string` (ISO datetime) | se asigna en el servidor al crear |
 
-> **Limitación conocida:** marcar una notificación como `leida` se hace vía
-> `PUT /notificaciones/{id}`, pero ese endpoint es **solo `ADMIN`**. Hoy un usuario normal
-> **no puede** marcar sus propias notificaciones como leídas por sí mismo — la API no expone
-> ese caso de uso todavía. Si la UI necesita "marcar como leída" para el dueño de la
-> notificación, hay que pedir al backend un endpoint dedicado (p. ej.
-> `PATCH /notificaciones/{id}/leida`, self-service). Mientras tanto, omitir ese botón para
-> roles no `ADMIN`, o dejarlo deshabilitado con un tooltip explicativo.
+> **Nota:** marcar una notificación como `leida` se hace vía `PUT /notificaciones/{id}`. El
+> dueño de la notificación (cualquier rol) puede marcarla como leída enviando solo `{ "leida":
+> true }`; si además envía `titulo` o `mensaje` sin ser `ADMIN`, recibe `403`. `ADMIN` puede
+> editar cualquier campo de cualquier notificación, sea o no el destinatario.
 
 ## 4. Endpoints a consumir
 
@@ -182,14 +182,17 @@ Ejemplo `207`:
 
 ### 4.5 Actualizar notificación — `PUT /api/v1/notificaciones/{notificacion_id}` (parcial)
 
-- **Auth:** **solo `ADMIN`** (ver limitación en §3 sobre "marcar como leída").
+- **Auth:** `ADMIN` puede actualizar cualquier notificación por completo. El dueño de la
+  notificación (`PARTICIPANT`/`MEMBER`) solo puede marcar/desmarcar su propia `leida`; si envía
+  `titulo` y/o `mensaje`, o si la notificación no es suya, recibe `403`.
 - **Body (todos opcionales, se actualiza solo lo enviado):**
   ```json
   { "titulo": "Nuevo título", "mensaje": "Nuevo mensaje", "leida": true }
   ```
+  Un usuario no-admin solo debe enviar `{ "leida": true }` (o `false`).
   `usuario_id` **no es modificable** (no se puede reasignar el destinatario).
 - **200:** `data` = `NotificationResponse` actualizada. `message: "Notificación actualizada exitosamente"`.
-- **403** no admin · **404** `"Notificación no encontrada"` · **422** campos inválidos.
+- **403** no es el dueño / no admin intentando tocar `titulo`/`mensaje` · **404** `"Notificación no encontrada"` · **422** campos inválidos.
 
 ### 4.6 Eliminar notificación — `DELETE /api/v1/notificaciones/{notificacion_id}`
 
@@ -205,7 +208,9 @@ Ejemplo `207`:
 | Ver detalle de otro usuario | ❌ 403 | ❌ 403 | ❌ 401 |
 | Crear notificación individual | ✅ | ❌ 403 | ❌ 401 |
 | Envío masivo | ✅ | ❌ 403 | ❌ 401 |
-| Editar / marcar leída / eliminar | ✅ | ❌ 403 | ❌ 401 |
+| Editar título/mensaje / eliminar | ✅ | ❌ 403 | ❌ 401 |
+| Marcar/desmarcar `leida` propia | ✅ | ✅ | ❌ 401 |
+| Marcar/desmarcar `leida` ajena | ✅ | ❌ 403 | ❌ 401 |
 
 ## 5. Estructura a implementar en el frontend
 
@@ -224,7 +229,7 @@ src/
 ├── pages/
 │   └── notifications/
 │       ├── NotificationsInboxPage.tsx   # todos los roles: mis notificaciones
-│       ├── NotificationDetailPage.tsx   # detalle (leída deshabilitado si no ADMIN, ver §3)
+│       ├── NotificationDetailPage.tsx   # detalle; auto-marca leída al abrir (ver §3)
 │       ├── NotificationSendPage.tsx     # ADMIN: tabs "Individual" | "Masivo"
 │       └── components/
 │           ├── NotificationsList.tsx
@@ -333,9 +338,10 @@ endpoints donde 2xx = éxito, no-2xx = error, tal como ya funciona hoy.
    **solo sus propias** notificaciones (el backend ya filtra; no hay filtro de usuario en la UI).
    Lista con `titulo`, `fecha_envio` (formateada), indicador visual de `leida`. Paginación
    server-side con `limit`/`offset` y total desde `meta.totalNotificaciones`.
-2. **Detalle (`/notificaciones/:id`):** `titulo`, `mensaje`, `fecha_envio`. Botón "Marcar como
-   leída" **solo visible si `role === "ADMIN"`** (ver limitación §3); para el resto de roles,
-   ocultarlo o deshabilitarlo con tooltip. `403`/`404` → pantalla de error con enlace a la bandeja.
+2. **Detalle (`/notificaciones/:id`):** `titulo`, `mensaje`, `fecha_envio`. Al abrir la página se
+   marca automáticamente como leída (`PUT { leida: true }`) si no lo estaba ya — sin botón, para
+   cualquier rol, ya que el dueño puede marcar su propia notificación (ver §3). `403`/`404` →
+   pantalla de error con enlace a la bandeja.
 3. **Envío individual (`NotificationSendPage`, tab "Individual"):** `ProtectedRoute
    requiredRole="ADMIN"`. Formulario con selector de 1 usuario (`userService.list()`), `titulo` y
    `mensaje` (`textarea`). Éxito (`201`) → toast + limpiar formulario.

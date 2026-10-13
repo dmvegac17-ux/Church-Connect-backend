@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from sqlalchemy import ForeignKey
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 
@@ -14,9 +15,11 @@ class UserMinistryModel(Base):
     )
 
     usuario_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("usuarios.id", ondelete="CASCADE"),
         nullable=True
     )
 
     ministerio_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("ministry.id", ondelete="CASCADE"),
         nullable=True
     )

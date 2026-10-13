@@ -2,6 +2,7 @@ from uuid import UUID
 
 from sqlalchemy import func
 from sqlalchemy import select
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.infrastructure.database.models.notificaciones_model import NotificacionesModel
@@ -27,7 +28,12 @@ class NotificacionesRepository:
                 NotificacionesModel.usuario_id == usuario_id
             )
 
-        query = query.limit(limit).offset(offset)
+        query = (
+            query
+            .order_by(NotificacionesModel.fecha_envio.desc())
+            .limit(limit)
+            .offset(offset)
+        )
 
         result = await self.db.execute(query)
 
@@ -95,3 +101,50 @@ class NotificacionesRepository:
 
         return notificacion
 
+    # ── Por lotes: una sola sentencia para todas las filas ──────────────
+
+    async def marcar(self, usuario_id: UUID, ids: list[UUID], leida: bool) -> int:
+        """
+        Marca de una vez las notificaciones indicadas, solo si son de ese
+        usuario. Devuelve cuántas encontró (sin confirmar la transacción).
+        """
+        result = await self.db.execute(
+            update(NotificacionesModel)
+            .where(
+                NotificacionesModel.id.in_(ids),
+                NotificacionesModel.usuario_id == usuario_id
+            )
+            .values(leida=leida)
+            .execution_options(synchronize_session=False)
+        )
+
+        return result.rowcount
+
+    async def marcar_todas_leidas(self, usuario_id: UUID) -> int:
+        result = await self.db.execute(
+            update(NotificacionesModel)
+            .where(
+                NotificacionesModel.usuario_id == usuario_id,
+                NotificacionesModel.leida.is_(False)
+            )
+            .values(leida=True)
+            .execution_options(synchronize_session=False)
+        )
+        await self.db.commit()
+
+        return result.rowcount
+
+    async def contar_no_leidas(self, usuario_id: UUID) -> int:
+        result = await self.db.execute(
+            select(func.count())
+            .select_from(NotificacionesModel)
+            .where(
+                NotificacionesModel.usuario_id == usuario_id,
+                NotificacionesModel.leida.is_(False)
+            )
+        )
+
+        return result.scalar_one()
+
+    async def commit(self) -> None:
+        await self.db.commit()
